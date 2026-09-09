@@ -60,7 +60,7 @@ export function PannelloClient({ fornitori, prodotti }: Props) {
           <button
             key={f.id}
             onClick={() => setFornitoreId(f.id)}
-            className={`shrink-0 rounded-md px-3 py-1.5 text-sm ${
+            className={`shrink-0 rounded-md px-3 py-2.5 text-sm ${
               f.id === fornitoreId ? "bg-neutral-900 text-white" : "text-neutral-600 hover:bg-neutral-100"
             }`}
           >
@@ -84,7 +84,7 @@ export function PannelloClient({ fornitori, prodotti }: Props) {
             </div>
             <button
               onClick={() => apriStorico(p)}
-              className="shrink-0 rounded-md px-2 py-1 text-sm text-neutral-500 hover:bg-neutral-100"
+              className="shrink-0 rounded-md px-3 py-2 text-sm text-neutral-500 hover:bg-neutral-100"
               title="Storico prezzi"
             >
               📈 Storico

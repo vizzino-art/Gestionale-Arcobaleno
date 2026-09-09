@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 const VOCI = [
@@ -11,19 +12,32 @@ const VOCI = [
 export function NavBar() {
   return (
     <nav className="border-b border-neutral-200 bg-white">
-      <div className="mx-auto flex max-w-5xl items-center gap-1 overflow-x-auto px-4 py-3">
-        <span className="mr-4 shrink-0 text-sm font-semibold text-neutral-900">
-          Gestionale Ordini Arcobaleno
-        </span>
-        {VOCI.map((voce) => (
-          <Link
-            key={voce.href}
-            href={voce.href}
-            className="shrink-0 rounded-md px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
-          >
-            {voce.label}
-          </Link>
-        ))}
+      <div className="mx-auto flex max-w-5xl items-center gap-3 px-3 py-2 sm:px-4">
+        <Link href="/" className="shrink-0">
+          <Image
+            src="/logo-arcobaleno.png"
+            alt="Arcobaleno"
+            width={642}
+            height={226}
+            priority
+            className="h-9 w-auto sm:h-10"
+          />
+        </Link>
+        <div className="relative min-w-0 flex-1">
+          <div className="flex gap-1 overflow-x-auto [-webkit-overflow-scrolling:touch]">
+            {VOCI.map((voce) => (
+              <Link
+                key={voce.href}
+                href={voce.href}
+                className="shrink-0 rounded-md px-3 py-2.5 text-sm text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 active:bg-neutral-200"
+              >
+                {voce.label}
+              </Link>
+            ))}
+          </div>
+          {/* Ombra a destra: indica che si può scorrere per vedere le voci fuori schermo su mobile */}
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-white to-transparent" />
+        </div>
       </div>
     </nav>
   );
