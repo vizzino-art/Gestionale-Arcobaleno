@@ -245,6 +245,33 @@ create trigger trg_aggiorna_miglior_fornitore
   execute function aggiorna_miglior_fornitore();
 
 -- ============================================================================
+-- STORICO PREZZI PER PRODOTTO (ultimo pagato + minimo storico)
+-- Alimenta la card prodotto in Ordina: "Ultimo pagato: €X · Minimo: €Y".
+-- ============================================================================
+-- NB: esclude le righe a prezzo 0 (es. Birra Ingross registra l'omaggio come
+-- riga duplicata dello stesso prodotto a prezzo 0, "Sconto merce"/#SM#): non
+-- sono prezzi reali pagati, stesso criterio già usato nel vecchio gestionale.
+create or replace view v_storico_prodotto as
+select
+  s.prodotto_id,
+  s.ultimo_pagato,
+  s.ultimo_pagato_data,
+  m.prezzo_minimo
+from (
+  select distinct on (prodotto_id)
+    prodotto_id, prezzo as ultimo_pagato, data as ultimo_pagato_data
+  from storico_prezzi_fatture
+  where prodotto_id is not null and prezzo > 0
+  order by prodotto_id, data desc, created_at desc
+) s
+join (
+  select prodotto_id, min(prezzo) as prezzo_minimo
+  from storico_prezzi_fatture
+  where prodotto_id is not null and prezzo > 0
+  group by prodotto_id
+) m using (prodotto_id);
+
+-- ============================================================================
 -- ROW LEVEL SECURITY
 -- Squadra piccola e fidata: chiunque sia autenticato (utenti invitati da
 -- Supabase, niente registrazione pubblica) può leggere e scrivere.

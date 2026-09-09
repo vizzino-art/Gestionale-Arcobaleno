@@ -55,6 +55,15 @@ export type ConfrontoCategoria = {
   posizione: number;
 };
 
+// Da v_storico_prodotto: ultimo prezzo pagato e minimo storico per prodotto
+// (righe a prezzo 0 — omaggi/sconto merce — già escluse dalla vista).
+export type StoricoProdotto = {
+  prodotto_id: string;
+  ultimo_pagato: number;
+  ultimo_pagato_data: string;
+  prezzo_minimo: number;
+};
+
 // Riga di storico_miglior_fornitore con i nomi già risolti (join),
 // così come arriva dalla query in Confronta: alimenta le notifiche
 // "è cambiato il fornitore più conveniente per <categoria>".
