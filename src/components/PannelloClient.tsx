@@ -2,18 +2,19 @@
 
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { Fornitore, Prodotto } from "@/lib/types";
+import { ModificaProdottoModal } from "./ModificaProdottoModal";
+import type { Categoria, Fornitore, Prodotto } from "@/lib/types";
 
 export type ProdottoConCategoria = Prodotto & { categorie: { nome: string } | null };
 
 // Stessa tavolozza tenue usata in Ordina, per coerenza visiva tra le pagine.
 const COLORI_RIGA = [
-  "bg-red-50/60",
-  "bg-orange-50/60",
-  "bg-amber-50/60",
-  "bg-lime-50/60",
-  "bg-sky-50/60",
-  "bg-violet-50/60",
+  "bg-red-100",
+  "bg-orange-100",
+  "bg-amber-100",
+  "bg-lime-100",
+  "bg-sky-100",
+  "bg-violet-100",
 ];
 
 type RigaStorico = {
@@ -27,22 +28,34 @@ type RigaStorico = {
 type Props = {
   fornitori: Fornitore[];
   prodotti: ProdottoConCategoria[];
+  categorie: Categoria[];
 };
 
-export function PannelloClient({ fornitori, prodotti }: Props) {
+export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categorie }: Props) {
   const supabase = useMemo(() => createClient(), []);
+  const [prodotti, setProdotti] = useState<ProdottoConCategoria[]>(prodottiIniziali);
   const [fornitoreId, setFornitoreId] = useState<string | undefined>(fornitori[0]?.id);
   const [modaleProdotto, setModaleProdotto] = useState<ProdottoConCategoria | null>(null);
   const [storico, setStorico] = useState<RigaStorico[]>([]);
   const [caricando, setCaricando] = useState(false);
+  const [modaleModifica, setModaleModifica] = useState<
+    { modo: "nuovo" } | { modo: "modifica"; prodotto: ProdottoConCategoria } | null
+  >(null);
 
   const prodottiFornitore = useMemo(
     () =>
       prodotti
         .filter((p) => p.fornitore_id === fornitoreId)
-        // A parità di "ordine" (duplicati nei dati migrati), l'ordine
-        // alfabetico rende il risultato stabile invece che casuale.
-        .sort((a, b) => a.ordine - b.ordine || a.descrizione.localeCompare(b.descrizione, "it")),
+        // I prodotti disattivati vanno in fondo (restano comunque visibili e
+        // modificabili qui, per poterli riattivare in futuro se il prezzo
+        // torna conveniente). A parità, tiebreak su "ordine" e poi
+        // alfabetico (alcuni prodotti migrati condividono lo stesso valore).
+        .sort(
+          (a, b) =>
+            Number(a.attivo === false) - Number(b.attivo === false) ||
+            a.ordine - b.ordine ||
+            a.descrizione.localeCompare(b.descrizione, "it")
+        ),
     [prodotti, fornitoreId]
   );
 
@@ -65,9 +78,17 @@ export function PannelloClient({ fornitori, prodotti }: Props) {
     setStorico([]);
   }
 
+  function prodottoSalvato(p: ProdottoConCategoria) {
+    setProdotti((prev) => {
+      const esiste = prev.some((x) => x.id === p.id);
+      return esiste ? prev.map((x) => (x.id === p.id ? p : x)) : [...prev, p];
+    });
+    setModaleModifica(null);
+  }
+
   return (
     <div>
-      <div className="mb-4 flex gap-1 overflow-x-auto border-b border-neutral-200 pb-2">
+      <div className="mb-3 flex gap-1 overflow-x-auto border-b border-neutral-200 pb-2">
         {fornitori.map((f) => (
           <button
             key={f.id}
@@ -81,8 +102,19 @@ export function PannelloClient({ fornitori, prodotti }: Props) {
         ))}
       </div>
 
+      {fornitoreId && (
+        <div className="mb-3 flex justify-end">
+          <button
+            onClick={() => setModaleModifica({ modo: "nuovo" })}
+            className="shrink-0 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700"
+          >
+            + Nuovo prodotto
+          </button>
+        </div>
+      )}
+
       {prodottiFornitore.length === 0 && (
-        <p className="text-sm text-neutral-500">Nessun prodotto attivo per questo fornitore.</p>
+        <p className="text-sm text-neutral-500">Nessun prodotto per questo fornitore.</p>
       )}
 
       <div className="space-y-2">
@@ -91,21 +123,35 @@ export function PannelloClient({ fornitori, prodotti }: Props) {
           return (
             <div
               key={p.id}
-              className={`flex items-center justify-between gap-4 rounded-xl border border-neutral-200 p-3 ${colore}`}
+              className={`flex items-center justify-between gap-4 rounded-xl border border-neutral-200 p-3 ${
+                p.attivo ? colore : "bg-neutral-100 opacity-60"
+              }`}
             >
               <div>
-                <p className="text-sm font-medium text-neutral-900">{p.descrizione}</p>
+                <p className="text-sm font-medium text-neutral-900">
+                  {p.descrizione}
+                  {!p.attivo && <span className="ml-2 text-xs text-neutral-500">(disattivato)</span>}
+                </p>
                 <p className="text-xs text-neutral-500">
                   {p.categorie?.nome ?? "senza categoria"} · €{p.prezzo_unitario?.toFixed(2) ?? "—"} /{p.um ?? "—"}
                 </p>
               </div>
-              <button
-                onClick={() => apriStorico(p)}
-                className="shrink-0 rounded-md bg-white/70 px-3 py-2 text-sm text-neutral-500 hover:bg-white"
-                title="Storico prezzi"
-              >
-                📈 Storico
-              </button>
+              <div className="flex shrink-0 gap-1">
+                <button
+                  onClick={() => setModaleModifica({ modo: "modifica", prodotto: p })}
+                  className="rounded-md bg-white/70 px-3 py-2 text-sm text-neutral-500 hover:bg-white"
+                  title="Modifica prodotto"
+                >
+                  ✏️ Modifica
+                </button>
+                <button
+                  onClick={() => apriStorico(p)}
+                  className="rounded-md bg-white/70 px-3 py-2 text-sm text-neutral-500 hover:bg-white"
+                  title="Storico prezzi"
+                >
+                  📈 Storico
+                </button>
+              </div>
             </div>
           );
         })}
@@ -169,6 +215,17 @@ export function PannelloClient({ fornitori, prodotti }: Props) {
             )}
           </div>
         </div>
+      )}
+
+      {modaleModifica && fornitoreId && (
+        <ModificaProdottoModal
+          fornitoreId={fornitoreId}
+          categorie={categorie}
+          prodotto={modaleModifica.modo === "modifica" ? modaleModifica.prodotto : null}
+          prodottiFornitore={prodottiFornitore}
+          onSalvato={prodottoSalvato}
+          onChiudi={() => setModaleModifica(null)}
+        />
       )}
     </div>
   );
