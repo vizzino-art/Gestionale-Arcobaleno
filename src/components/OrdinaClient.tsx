@@ -29,6 +29,17 @@ function arrotonda(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+// Colori tenui che si alternano riga per riga (tema "arcobaleno", ma smorzato)
+// per distinguere a colpo d'occhio un prodotto dal successivo nell'elenco.
+const COLORI_RIGA = [
+  "bg-red-50/60",
+  "bg-orange-50/60",
+  "bg-amber-50/60",
+  "bg-lime-50/60",
+  "bg-sky-50/60",
+  "bg-violet-50/60",
+];
+
 export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const [prodotti, setProdotti] = useState<Prodotto[]>(prodottiIniziali);
@@ -59,7 +70,10 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico }
     () =>
       prodotti
         .filter((p) => p.fornitore_id === fornitoreId)
-        .sort((a, b) => a.ordine - b.ordine),
+        // Ordine personalizzato (frecce ▲▼); a parità di "ordine" (può
+        // succedere sui dati migrati) l'ordine alfabetico rende il
+        // risultato stabile invece di dipendere da un ordine casuale.
+        .sort((a, b) => a.ordine - b.ordine || a.descrizione.localeCompare(b.descrizione, "it")),
     [prodotti, fornitoreId]
   );
 
@@ -95,6 +109,30 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico }
     }, 700);
   }
 
+  async function spostaProdotto(prodottoId: string, direzione: "su" | "giu") {
+    const idx = prodottiFornitore.findIndex((p) => p.id === prodottoId);
+    const altroIdx = direzione === "su" ? idx - 1 : idx + 1;
+    if (idx === -1 || altroIdx < 0 || altroIdx >= prodottiFornitore.length) return;
+
+    const a = prodottiFornitore[idx];
+    const b = prodottiFornitore[altroIdx];
+    const ordineA = a.ordine;
+    const ordineB = b.ordine;
+
+    setProdotti((prev) =>
+      prev.map((p) => {
+        if (p.id === a.id) return { ...p, ordine: ordineB };
+        if (p.id === b.id) return { ...p, ordine: ordineA };
+        return p;
+      })
+    );
+
+    await Promise.all([
+      supabase.from("prodotti").update({ ordine: ordineB }).eq("id", a.id),
+      supabase.from("prodotti").update({ ordine: ordineA }).eq("id", b.id),
+    ]);
+  }
+
   async function copiaMessaggio() {
     await navigator.clipboard.writeText(testoWhatsApp);
     setCopiato(true);
@@ -123,8 +161,8 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico }
         <p className="text-sm text-neutral-500">Nessun prodotto attivo per questo fornitore.</p>
       )}
 
-      <div className="space-y-3">
-        {prodottiFornitore.map((p) => {
+      <div className="space-y-2">
+        {prodottiFornitore.map((p, i) => {
           const riga = calcolaOrdine(p);
           const propria = confrontoByProdotto.get(p.id);
           const migliore = p.categoria_id ? migliorPerCategoria.get(p.categoria_id) : undefined;
@@ -133,9 +171,33 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico }
           const conviene = propria && propria.posizione === 1;
           const st = storicoByProdotto.get(p.id);
           const stato = statoSalvataggio[p.id];
+          const colore = COLORI_RIGA[i % COLORI_RIGA.length];
 
           return (
-            <div key={p.id} className="rounded-xl border border-neutral-200 bg-white p-4">
+            <div
+              key={p.id}
+              className={`flex gap-3 rounded-xl border border-neutral-200 p-3 ${colore}`}
+            >
+              <div className="flex shrink-0 flex-col gap-0.5 pt-0.5">
+                <button
+                  onClick={() => spostaProdotto(p.id, "su")}
+                  disabled={i === 0}
+                  aria-label="Sposta su"
+                  className="rounded px-1.5 py-1 text-neutral-400 hover:bg-white/70 hover:text-neutral-700 disabled:opacity-20"
+                >
+                  ▲
+                </button>
+                <button
+                  onClick={() => spostaProdotto(p.id, "giu")}
+                  disabled={i === prodottiFornitore.length - 1}
+                  aria-label="Sposta giù"
+                  className="rounded px-1.5 py-1 text-neutral-400 hover:bg-white/70 hover:text-neutral-700 disabled:opacity-20"
+                >
+                  ▼
+                </button>
+              </div>
+
+              <div className="min-w-0 flex-1">
               <div className="mb-2 flex items-start justify-between gap-4">
                 <p className="text-sm font-medium text-neutral-900">{p.descrizione}</p>
                 {stato && (
@@ -192,6 +254,7 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico }
                   {st.prezzo_minimo.toFixed(2)}
                 </p>
               )}
+              </div>
             </div>
           );
         })}

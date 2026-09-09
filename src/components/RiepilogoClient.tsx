@@ -27,7 +27,9 @@ export function RiepilogoClient({ fornitori, prodotti }: Props) {
       .map((f) => {
         const prodottiFornitore = prodotti
           .filter((p) => p.fornitore_id === f.id)
-          .sort((a, b) => a.ordine - b.ordine);
+          // A parità di "ordine" (duplicati nei dati migrati), l'ordine
+          // alfabetico rende il risultato stabile invece che casuale.
+          .sort((a, b) => a.ordine - b.ordine || a.descrizione.localeCompare(b.descrizione, "it"));
         const righe = prodottiFornitore.map((p) => calcolaOrdine(p)).filter((r) => r !== null);
         return { fornitore: f, righe };
       })
@@ -67,7 +69,7 @@ export function RiepilogoClient({ fornitori, prodotti }: Props) {
               <div className="flex shrink-0 gap-2">
                 <button
                   onClick={() => copia(fornitore.id, testo)}
-                  className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-800"
+                  className="rounded-lg bg-neutral-900 px-3 py-2 text-xs font-medium text-white hover:bg-neutral-800"
                 >
                   {copiatoId === fornitore.id ? "Copiato ✓" : "Copia messaggio"}
                 </button>
@@ -76,7 +78,7 @@ export function RiepilogoClient({ fornitori, prodotti }: Props) {
                     href={linkWhatsApp(fornitore.telefono, testo)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700"
+                    className="rounded-lg bg-green-600 px-3 py-2 text-xs font-medium text-white hover:bg-green-700"
                   >
                     WhatsApp
                   </a>

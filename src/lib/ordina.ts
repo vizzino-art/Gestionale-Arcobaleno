@@ -75,6 +75,10 @@ export function formattaDataBreve(d: Date): string {
 /**
  * Testo del messaggio WhatsApp per l'ordine a un fornitore.
  * Formato "quantità UM descrizione", senza codice articolo.
+ * Le righe sono sempre in ordine alfabetico per descrizione nel messaggio
+ * finale, indipendentemente dall'ordine di visualizzazione a schermo
+ * (quello personalizzato con le frecce ▲▼ serve solo per trovare
+ * velocemente i prodotti mentre si compila l'ordine).
  */
 export function formattaMessaggioWhatsApp(
   fornitoreNome: string,
@@ -85,7 +89,11 @@ export function formattaMessaggioWhatsApp(
     ? `Ordine ${fornitoreNome} - consegna ${formattaDataBreve(prossimaConsegna(giornoConsegna))}`
     : `Ordine ${fornitoreNome}`;
 
-  const corpo = righe
+  const righeAlfabetiche = [...righe].sort((a, b) =>
+    a.prodotto.descrizione.localeCompare(b.prodotto.descrizione, "it")
+  );
+
+  const corpo = righeAlfabetiche
     .map((r) => {
       const base = `${r.quantitaOrdine} ${r.unitaMostrata} ${r.prodotto.descrizione}`;
       return r.quantitaOmaggio > 0 ? `${base} (+${r.quantitaOmaggio} omaggio)` : base;

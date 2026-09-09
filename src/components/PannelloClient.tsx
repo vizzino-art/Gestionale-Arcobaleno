@@ -6,6 +6,16 @@ import type { Fornitore, Prodotto } from "@/lib/types";
 
 export type ProdottoConCategoria = Prodotto & { categorie: { nome: string } | null };
 
+// Stessa tavolozza tenue usata in Ordina, per coerenza visiva tra le pagine.
+const COLORI_RIGA = [
+  "bg-red-50/60",
+  "bg-orange-50/60",
+  "bg-amber-50/60",
+  "bg-lime-50/60",
+  "bg-sky-50/60",
+  "bg-violet-50/60",
+];
+
 type RigaStorico = {
   id: string;
   data: string;
@@ -30,7 +40,9 @@ export function PannelloClient({ fornitori, prodotti }: Props) {
     () =>
       prodotti
         .filter((p) => p.fornitore_id === fornitoreId)
-        .sort((a, b) => a.ordine - b.ordine),
+        // A parità di "ordine" (duplicati nei dati migrati), l'ordine
+        // alfabetico rende il risultato stabile invece che casuale.
+        .sort((a, b) => a.ordine - b.ordine || a.descrizione.localeCompare(b.descrizione, "it")),
     [prodotti, fornitoreId]
   );
 
@@ -73,24 +85,30 @@ export function PannelloClient({ fornitori, prodotti }: Props) {
         <p className="text-sm text-neutral-500">Nessun prodotto attivo per questo fornitore.</p>
       )}
 
-      <div className="divide-y divide-neutral-200 rounded-xl border border-neutral-200 bg-white">
-        {prodottiFornitore.map((p) => (
-          <div key={p.id} className="flex items-center justify-between gap-4 p-3">
-            <div>
-              <p className="text-sm font-medium text-neutral-900">{p.descrizione}</p>
-              <p className="text-xs text-neutral-500">
-                {p.categorie?.nome ?? "senza categoria"} · €{p.prezzo_unitario?.toFixed(2) ?? "—"} /{p.um ?? "—"}
-              </p>
-            </div>
-            <button
-              onClick={() => apriStorico(p)}
-              className="shrink-0 rounded-md px-3 py-2 text-sm text-neutral-500 hover:bg-neutral-100"
-              title="Storico prezzi"
+      <div className="space-y-2">
+        {prodottiFornitore.map((p, i) => {
+          const colore = COLORI_RIGA[i % COLORI_RIGA.length];
+          return (
+            <div
+              key={p.id}
+              className={`flex items-center justify-between gap-4 rounded-xl border border-neutral-200 p-3 ${colore}`}
             >
-              📈 Storico
-            </button>
-          </div>
-        ))}
+              <div>
+                <p className="text-sm font-medium text-neutral-900">{p.descrizione}</p>
+                <p className="text-xs text-neutral-500">
+                  {p.categorie?.nome ?? "senza categoria"} · €{p.prezzo_unitario?.toFixed(2) ?? "—"} /{p.um ?? "—"}
+                </p>
+              </div>
+              <button
+                onClick={() => apriStorico(p)}
+                className="shrink-0 rounded-md bg-white/70 px-3 py-2 text-sm text-neutral-500 hover:bg-white"
+                title="Storico prezzi"
+              >
+                📈 Storico
+              </button>
+            </div>
+          );
+        })}
       </div>
 
       {modaleProdotto && (
