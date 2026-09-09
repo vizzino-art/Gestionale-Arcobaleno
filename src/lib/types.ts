@@ -54,3 +54,16 @@ export type ConfrontoCategoria = {
   prezzo_per_kg: number | null;
   posizione: number;
 };
+
+// Riga di storico_miglior_fornitore con i nomi già risolti (join),
+// così come arriva dalla query in Confronta: alimenta le notifiche
+// "è cambiato il fornitore più conveniente per <categoria>".
+export type CambioMigliorFornitore = {
+  id: string;
+  categoria_id: string;
+  fornitore_id: string;
+  prezzo_per_kg: number | null;
+  rilevato_il: string;
+  categorie: { nome: string } | null;
+  fornitori: { nome: string } | null;
+};
