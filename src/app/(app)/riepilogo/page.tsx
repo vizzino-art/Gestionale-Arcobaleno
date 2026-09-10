@@ -7,7 +7,7 @@ export default async function RiepilogoPage() {
 
   const [{ data: fornitori, error: erroreFornitori }, { data: prodotti, error: erroreProdotti }] =
     await Promise.all([
-      supabase.from("fornitori").select("*").order("ordine", { ascending: true }),
+      supabase.from("fornitori").select("*").order("nome", { ascending: true }),
       supabase
         .from("prodotti")
         .select("*")
