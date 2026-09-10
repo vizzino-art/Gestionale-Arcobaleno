@@ -8,6 +8,7 @@ import {
   formattaMessaggioWhatsApp,
   linkWhatsApp,
   prossimaConsegna,
+  unitaMagazzino,
 } from "@/lib/ordina";
 import type {
   ConfrontoCategoria,
@@ -114,13 +115,14 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico }
   // sbaglio, prima chiede conferma e solo poi apre il popup per il nuovo
   // valore, invece di essere un campo sempre pronto a scrivere come Magazzino.
   function modificaObiettivo(p: Prodotto) {
+    const unita = unitaMagazzino(p);
     const vuoleModificare = window.confirm(
-      `Obiettivo attuale di "${p.descrizione}": ${p.quantita_obiettivo ?? "—"} ${p.um ?? ""}.\n\nVuoi modificarlo?`
+      `Obiettivo attuale di "${p.descrizione}": ${p.quantita_obiettivo ?? "—"} ${unita}.\n\nVuoi modificarlo?`
     );
     if (!vuoleModificare) return;
 
     const valore = window.prompt(
-      `Nuovo obiettivo per "${p.descrizione}"${p.um ? ` (${p.um})` : ""}:`,
+      `Nuovo obiettivo per "${p.descrizione}"${unita ? ` (${unita})` : ""}:`,
       p.quantita_obiettivo != null ? String(p.quantita_obiettivo) : ""
     );
     if (valore === null) return; // annullato
@@ -191,6 +193,7 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico }
           const st = storicoByProdotto.get(p.id);
           const stato = statoSalvataggio[p.id];
           const colore = COLORI_RIGA[i % COLORI_RIGA.length];
+          const unita = unitaMagazzino(p);
 
           return (
             <div
@@ -219,7 +222,7 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico }
               {/* Magazzino: si aggiorna spesso, resta un campo pronto da scrivere,
                   a sinistra del nome prodotto. */}
               <label className="shrink-0 text-center text-[10px] leading-tight text-neutral-500">
-                Magazzino
+                Magazzino{unita && ` (${unita})`}
                 <input
                   type="number"
                   step="any"
@@ -277,7 +280,7 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico }
                 <span className="text-sm font-medium text-neutral-800">
                   {p.quantita_obiettivo ?? "—"}
                 </span>
-                {p.um && <span> {p.um}</span>}
+                {unita && <span> {unita}</span>}
               </button>
             </div>
           );

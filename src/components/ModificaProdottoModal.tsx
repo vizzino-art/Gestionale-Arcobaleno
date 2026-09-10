@@ -22,6 +22,7 @@ type Form = {
   um: string;
   um_confezione: string;
   pezzi_per_confezione: string;
+  magazzino_in_confezione: boolean;
   peso_kg_per_unita: string;
   prezzo_listino: string;
   sconto1: string;
@@ -40,6 +41,7 @@ function formIniziale(p: ProdottoConCategoria | null): Form {
     um: p?.um ?? "",
     um_confezione: p?.um_confezione ?? "",
     pezzi_per_confezione: p?.pezzi_per_confezione?.toString() ?? "",
+    magazzino_in_confezione: p?.magazzino_in_confezione ?? false,
     peso_kg_per_unita: p?.peso_kg_per_unita?.toString() ?? "",
     prezzo_listino: p?.prezzo_listino?.toString() ?? "",
     sconto1: p?.sconto1?.toString() ?? "",
@@ -97,6 +99,7 @@ export function ModificaProdottoModal({
       um: form.um.trim() === "" ? null : form.um.trim(),
       um_confezione: form.um_confezione.trim() === "" ? null : form.um_confezione.trim(),
       pezzi_per_confezione: numOrNull(form.pezzi_per_confezione),
+      magazzino_in_confezione: form.magazzino_in_confezione,
       peso_kg_per_unita: numOrNull(form.peso_kg_per_unita),
       prezzo_listino: numOrNull(form.prezzo_listino),
       sconto1: numOrNull(form.sconto1),
@@ -223,6 +226,23 @@ export function ModificaProdottoModal({
               />
             </label>
           </div>
+
+          <label className="flex items-start gap-2 rounded-lg border border-neutral-200 p-3 text-sm text-neutral-700">
+            <input
+              type="checkbox"
+              checked={form.magazzino_in_confezione}
+              onChange={(e) => campo("magazzino_in_confezione", e.target.checked)}
+              className="mt-0.5 h-4 w-4"
+            />
+            <span>
+              Magazzino e Obiettivo si contano in &quot;UM confezione&quot;, non in &quot;UM&quot;
+              <br />
+              <span className="text-xs text-neutral-500">
+                Es. tieni il conto a sacchi interi ma il prezzo resta tracciato al kg (per trattare col
+                fornitore). Attivalo solo se hai compilato UM confezione e Pezzi per confezione sopra.
+              </span>
+            </span>
+          </label>
 
           <div className="rounded-lg border border-neutral-200 p-3">
             <p className="mb-2 text-xs font-medium text-neutral-700">Prezzo e sconti</p>
