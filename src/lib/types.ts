@@ -35,6 +35,11 @@ export type Prodotto = {
   peso_kg_per_unita: number | null;
   quantita_obiettivo: number | null;
   magazzino_attuale: number | null;
+  // Se true, "quantita_obiettivo" e "magazzino_attuale" sono espressi in
+  // um_confezione (es. sacchi) invece che in um (es. kg) — per prodotti
+  // dove si conta il magazzino a confezioni intere ma il prezzo resta
+  // tracciato nell'unità fine (es. €/kg) per poterlo trattare col fornitore.
+  magazzino_in_confezione: boolean;
   omaggio_ogni: number | null;
   omaggio_gratis: number | null;
   attivo: boolean;

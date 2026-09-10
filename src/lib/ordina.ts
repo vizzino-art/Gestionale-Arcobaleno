@@ -6,11 +6,23 @@ import type { Prodotto } from "./types";
 
 export type RigaOrdine = {
   prodotto: Prodotto;
-  fabbisogno: number; // in unità base (um), obiettivo - magazzino, mai negativo
+  fabbisogno: number; // nell'unità di magazzino (vedi unitaMagazzino), obiettivo - magazzino, mai negativo
   quantitaOrdine: number; // quantità da ordinare (pagata), nell'unità mostrata
   quantitaOmaggio: number; // quantità in più ricevuta gratis, stessa unità
   unitaMostrata: string; // um_confezione se presente, altrimenti um
 };
+
+/**
+ * Unità in cui sono espressi obiettivo/magazzino per questo prodotto:
+ * di norma "um" (es. kg), ma se magazzino_in_confezione è attivo diventa
+ * "um_confezione" (es. sacchi) — il prezzo resta comunque tracciato in "um".
+ */
+export function unitaMagazzino(prodotto: Prodotto): string {
+  if (prodotto.magazzino_in_confezione) {
+    return prodotto.um_confezione || prodotto.um || "";
+  }
+  return prodotto.um || "";
+}
 
 /**
  * Calcola cosa ordinare per un prodotto dato obiettivo/magazzino/omaggi.
@@ -29,8 +41,13 @@ export function calcolaOrdine(prodotto: Prodotto): RigaOrdine | null {
   // arrotonda sempre per eccesso (mai ordinare meno di quanto serve).
   // Se il prodotto si ordina già nella sua unità finale (es. KG, CS),
   // lascia il fabbisogno com'è, decimali compresi.
+  // Se magazzino_in_confezione è attivo, obiettivo/magazzino sono già
+  // espressi in unità di confezione (es. sacchi): niente da convertire,
+  // solo arrotondare per eccesso nel caso arrivino valori non interi.
   let necessario = fabbisogno;
-  if (prodotto.pezzi_per_confezione && prodotto.pezzi_per_confezione > 0) {
+  if (prodotto.magazzino_in_confezione) {
+    necessario = Math.ceil(fabbisogno);
+  } else if (prodotto.pezzi_per_confezione && prodotto.pezzi_per_confezione > 0) {
     necessario = Math.ceil(fabbisogno / prodotto.pezzi_per_confezione);
   }
 
