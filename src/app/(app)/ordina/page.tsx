@@ -12,7 +12,7 @@ export default async function OrdinaPage() {
 
   const [{ data: fornitori, error: erroreFornitori }, { data: prodotti, error: erroreProdotti }, { data: confronto }, { data: storico }] =
     await Promise.all([
-      supabase.from("fornitori").select("*").order("ordine", { ascending: true }),
+      supabase.from("fornitori").select("*").order("nome", { ascending: true }),
       supabase
         .from("prodotti")
         .select("*")
