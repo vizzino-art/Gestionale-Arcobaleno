@@ -109,6 +109,25 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico }
     }, 700);
   }
 
+  // L'obiettivo cambia raramente (a differenza del magazzino, che si
+  // aggiorna spesso): per evitare modifiche accidentali toccandolo per
+  // sbaglio, prima chiede conferma e solo poi apre il popup per il nuovo
+  // valore, invece di essere un campo sempre pronto a scrivere come Magazzino.
+  function modificaObiettivo(p: Prodotto) {
+    const vuoleModificare = window.confirm(
+      `Obiettivo attuale di "${p.descrizione}": ${p.quantita_obiettivo ?? "—"} ${p.um ?? ""}.\n\nVuoi modificarlo?`
+    );
+    if (!vuoleModificare) return;
+
+    const valore = window.prompt(
+      `Nuovo obiettivo per "${p.descrizione}"${p.um ? ` (${p.um})` : ""}:`,
+      p.quantita_obiettivo != null ? String(p.quantita_obiettivo) : ""
+    );
+    if (valore === null) return; // annullato
+
+    aggiornaCampo(p.id, "quantita_obiettivo", valore.trim());
+  }
+
   async function spostaProdotto(prodottoId: string, direzione: "su" | "giu") {
     const idx = prodottiFornitore.findIndex((p) => p.id === prodottoId);
     const altroIdx = direzione === "su" ? idx - 1 : idx + 1;
@@ -176,7 +195,7 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico }
           return (
             <div
               key={p.id}
-              className={`flex gap-3 rounded-xl border border-neutral-200 p-3 ${colore}`}
+              className={`flex items-start gap-2 rounded-xl border border-neutral-200 p-3 ${colore}`}
             >
               <div className="flex shrink-0 flex-col gap-0.5 pt-0.5">
                 <button
@@ -197,64 +216,69 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico }
                 </button>
               </div>
 
-              <div className="min-w-0 flex-1">
-              <div className="mb-2 flex items-start justify-between gap-4">
-                <p className="text-sm font-medium text-neutral-900">{p.descrizione}</p>
-                {stato && (
-                  <span className="shrink-0 text-xs text-neutral-400">
-                    {stato === "salvando" ? "salvataggio…" : "✓ salvato"}
-                  </span>
-                )}
-              </div>
+              {/* Magazzino: si aggiorna spesso, resta un campo pronto da scrivere,
+                  a sinistra del nome prodotto. */}
+              <label className="shrink-0 text-center text-[10px] leading-tight text-neutral-500">
+                Magazzino
+                <input
+                  type="number"
+                  step="any"
+                  defaultValue={p.magazzino_attuale ?? ""}
+                  onChange={(e) => aggiornaCampo(p.id, "magazzino_attuale", e.target.value)}
+                  className="mt-1 block w-14 rounded-md border border-neutral-300 px-1 py-2 text-center text-sm outline-none focus:border-neutral-500"
+                />
+              </label>
 
-              <div className="flex flex-wrap items-end gap-4">
-                <label className="text-xs text-neutral-500">
-                  Obiettivo ({p.um ?? "—"})
-                  <input
-                    type="number"
-                    step="any"
-                    defaultValue={p.quantita_obiettivo ?? ""}
-                    onChange={(e) => aggiornaCampo(p.id, "quantita_obiettivo", e.target.value)}
-                    className="mt-1 block w-24 rounded-md border border-neutral-300 px-2 py-2 text-sm outline-none focus:border-neutral-500"
-                  />
-                </label>
-                <label className="text-xs text-neutral-500">
-                  Magazzino ({p.um ?? "—"})
-                  <input
-                    type="number"
-                    step="any"
-                    defaultValue={p.magazzino_attuale ?? ""}
-                    onChange={(e) => aggiornaCampo(p.id, "magazzino_attuale", e.target.value)}
-                    className="mt-1 block w-24 rounded-md border border-neutral-300 px-2 py-2 text-sm outline-none focus:border-neutral-500"
-                  />
-                </label>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-medium text-neutral-900">{p.descrizione}</p>
+                  {stato && (
+                    <span className="shrink-0 text-[10px] text-neutral-400">
+                      {stato === "salvando" ? "salvataggio…" : "✓ salvato"}
+                    </span>
+                  )}
+                </div>
 
                 {riga && (
-                  <p className="text-sm font-medium text-neutral-900">
+                  <p className="mt-1 text-sm font-medium text-neutral-900">
                     Ordina: {arrotonda(riga.quantitaOrdine)} {riga.unitaMostrata}
                     {riga.quantitaOmaggio > 0 && (
                       <span className="text-green-700"> (+{arrotonda(riga.quantitaOmaggio)} omaggio)</span>
                     )}
                   </p>
                 )}
+
+                {conviene && (
+                  <p className="mt-1 text-xs text-green-700">✓ È il più conveniente in questa categoria</p>
+                )}
+                {nonConviene && migliore && (
+                  <p className="mt-1 text-xs text-amber-700">
+                    In questa categoria conviene {migliore.fornitore_nome} (€{migliore.prezzo_per_kg?.toFixed(2)}/kg
+                    {propria?.prezzo_per_kg != null && ` contro €${propria.prezzo_per_kg.toFixed(2)}/kg qui`})
+                  </p>
+                )}
+                {st && (
+                  <p className="mt-1 text-xs text-neutral-500">
+                    Ultimo pagato: €{st.ultimo_pagato.toFixed(2)} ({new Date(st.ultimo_pagato_data).toLocaleDateString("it-IT")}) · Minimo: €
+                    {st.prezzo_minimo.toFixed(2)}
+                  </p>
+                )}
               </div>
 
-              {conviene && (
-                <p className="mt-2 text-xs text-green-700">✓ È il più conveniente in questa categoria</p>
-              )}
-              {nonConviene && migliore && (
-                <p className="mt-2 text-xs text-amber-700">
-                  In questa categoria conviene {migliore.fornitore_nome} (€{migliore.prezzo_per_kg?.toFixed(2)}/kg
-                  {propria?.prezzo_per_kg != null && ` contro €${propria.prezzo_per_kg.toFixed(2)}/kg qui`})
-                </p>
-              )}
-              {st && (
-                <p className="mt-1 text-xs text-neutral-500">
-                  Ultimo pagato: €{st.ultimo_pagato.toFixed(2)} ({new Date(st.ultimo_pagato_data).toLocaleDateString("it-IT")}) · Minimo: €
-                  {st.prezzo_minimo.toFixed(2)}
-                </p>
-              )}
-              </div>
+              {/* Obiettivo: cambia quasi mai, quindi è solo testo — tap apre
+                  conferma + popup di modifica invece di un campo sempre editabile. */}
+              <button
+                onClick={() => modificaObiettivo(p)}
+                title="Tocca per modificare l'obiettivo"
+                className="shrink-0 rounded-md px-2 py-1.5 text-right text-[10px] leading-tight text-neutral-500 hover:bg-white/70"
+              >
+                Obiettivo
+                <br />
+                <span className="text-sm font-medium text-neutral-800">
+                  {p.quantita_obiettivo ?? "—"}
+                </span>
+                {p.um && <span> {p.um}</span>}
+              </button>
             </div>
           );
         })}
@@ -283,7 +307,7 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico }
               {copiato ? "Copiato ✓" : "Copia messaggio"}
             </button>
             {fornitore.telefono && (
-              <a
+              
                 href={linkWhatsApp(fornitore.telefono, testoWhatsApp)}
                 target="_blank"
                 rel="noopener noreferrer"
