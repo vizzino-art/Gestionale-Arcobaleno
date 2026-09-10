@@ -307,7 +307,7 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico }
               {copiato ? "Copiato ✓" : "Copia messaggio"}
             </button>
             {fornitore.telefono && (
-              
+              <a
                 href={linkWhatsApp(fornitore.telefono, testoWhatsApp)}
                 target="_blank"
                 rel="noopener noreferrer"
