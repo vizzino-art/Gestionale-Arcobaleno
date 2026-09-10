@@ -10,7 +10,7 @@ export default async function PannelloPage() {
     { data: prodotti, error: erroreProdotti },
     { data: categorie, error: erroreCategorie },
   ] = await Promise.all([
-    supabase.from("fornitori").select("*").order("ordine", { ascending: true }),
+    supabase.from("fornitori").select("*").order("nome", { ascending: true }),
     // Niente filtro "attivo": qui si vedono e si gestiscono anche i prodotti
     // disattivati (restano in fondo alla lista), per poterli riattivare in
     // futuro se il prezzo torna conveniente.
