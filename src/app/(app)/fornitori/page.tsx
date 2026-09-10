@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { FornitoriClient } from "@/components/FornitoriClient";
 import type { Fornitore } from "@/lib/types";
 
 export default async function FornitoriPage() {
@@ -23,22 +24,10 @@ export default async function FornitoriPage() {
       )}
 
       {!error && fornitori.length === 0 && (
-        <p className="text-sm text-neutral-500">
-          Nessun fornitore ancora. Verranno importati dal foglio Google
-          durante la migrazione dati.
-        </p>
+        <p className="mb-4 text-sm text-neutral-500">Nessun fornitore ancora.</p>
       )}
 
-      <div className="divide-y divide-neutral-200 rounded-xl border border-neutral-200 bg-white">
-        {fornitori.map((f) => (
-          <div key={f.id} className="p-4">
-            <p className="font-medium text-neutral-900">{f.nome}</p>
-            <p className="text-sm text-neutral-500">
-              {f.telefono ?? "—"} · {f.email ?? "—"}
-            </p>
-          </div>
-        ))}
-      </div>
+      {!error && <FornitoriClient fornitoriIniziali={fornitori} />}
     </div>
   );
 }
