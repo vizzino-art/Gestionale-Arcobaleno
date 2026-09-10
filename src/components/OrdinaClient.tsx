@@ -32,12 +32,12 @@ function arrotonda(n: number): number {
 // Colori tenui che si alternano riga per riga (tema "arcobaleno", ma smorzato)
 // per distinguere a colpo d'occhio un prodotto dal successivo nell'elenco.
 const COLORI_RIGA = [
-  "bg-red-50/60",
-  "bg-orange-50/60",
-  "bg-amber-50/60",
-  "bg-lime-50/60",
-  "bg-sky-50/60",
-  "bg-violet-50/60",
+  "bg-red-100",
+  "bg-orange-100",
+  "bg-amber-100",
+  "bg-lime-100",
+  "bg-sky-100",
+  "bg-violet-100",
 ];
 
 export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico }: Props) {
