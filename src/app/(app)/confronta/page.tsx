@@ -28,7 +28,8 @@ export default async function ConfrontaPage() {
   const righe = (data ?? []) as ConfrontoCategoria[];
   const cambi = (cambiData ?? []) as unknown as CambioMigliorFornitore[];
 
-  // Raggruppa per categoria
+  // Raggruppa per categoria (il confronto/posizione resta sempre calcolato
+  // per categoria, mai a livello di gruppo: qui è solo presentazione).
   const perCategoria = righe.reduce<Record<string, ConfrontoCategoria[]>>(
     (acc, r) => {
       (acc[r.categoria_nome] ??= []).push(r);
@@ -36,6 +37,36 @@ export default async function ConfrontaPage() {
     },
     {}
   );
+
+  // Categorie chiamate "Gruppo · Sottotipo" (es. "Formaggi · Asiago") vengono
+  // mostrate insieme sotto un'unica intestazione "Gruppo", con una sezione
+  // per ogni sottotipo — comodo per vedere tutti i formaggi in un colpo
+  // d'occhio senza però confrontare prezzi tra prodotti diversi tra loro
+  // (es. Asiago con Brie), che non avrebbe senso. Le categorie senza "·"
+  // restano una card singola come prima.
+  const SEPARATORE = " · ";
+  type Sezione = { titolo: string | null; righe: ConfrontoCategoria[] };
+  type Gruppo = { titolo: string; sezioni: Sezione[] };
+
+  const gruppi: Gruppo[] = [];
+  const indiceGruppo = new Map<string, Gruppo>();
+
+  for (const [nomeCategoria, righeCategoria] of Object.entries(perCategoria)) {
+    const idx = nomeCategoria.indexOf(SEPARATORE);
+    if (idx === -1) {
+      gruppi.push({ titolo: nomeCategoria, sezioni: [{ titolo: null, righe: righeCategoria }] });
+      continue;
+    }
+    const titoloGruppo = nomeCategoria.slice(0, idx);
+    const titoloSezione = nomeCategoria.slice(idx + SEPARATORE.length);
+    let g = indiceGruppo.get(titoloGruppo);
+    if (!g) {
+      g = { titolo: titoloGruppo, sezioni: [] };
+      indiceGruppo.set(titoloGruppo, g);
+      gruppi.push(g);
+    }
+    g.sezioni.push({ titolo: titoloSezione, righe: righeCategoria });
+  }
 
   return (
     <div>
@@ -81,33 +112,44 @@ export default async function ConfrontaPage() {
       )}
 
       <div className="space-y-6">
-        {Object.entries(perCategoria).map(([categoria, prodotti]) => (
+        {gruppi.map((g) => (
           <div
-            key={categoria}
+            key={g.titolo}
             className="rounded-xl border border-neutral-200 bg-white p-4"
           >
-            <h2 className="mb-2 font-medium text-neutral-900">{categoria}</h2>
-            <div className="divide-y divide-neutral-100">
-              {prodotti.map((p) => (
-                <div
-                  key={p.prodotto_id}
-                  className="flex items-center justify-between py-2 text-sm"
-                >
-                  <span
-                    className={
-                      p.posizione === 1
-                        ? "font-medium text-green-700"
-                        : "text-neutral-600"
-                    }
-                  >
-                    {p.posizione === 1 && "✓ "}
-                    {p.fornitore_nome} — {p.descrizione}
-                  </span>
-                  <span className="text-neutral-500">
-                    {p.prezzo_per_kg != null
-                      ? `€${p.prezzo_per_kg.toFixed(2)}/kg`
-                      : `€${p.prezzo_unitario?.toFixed(2) ?? "—"}`}
-                  </span>
+            <h2 className="mb-2 font-medium text-neutral-900">{g.titolo}</h2>
+            <div className="space-y-4">
+              {g.sezioni.map((s, i) => (
+                <div key={s.titolo ?? i}>
+                  {s.titolo && (
+                    <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+                      {s.titolo}
+                    </h3>
+                  )}
+                  <div className="divide-y divide-neutral-100">
+                    {s.righe.map((p) => (
+                      <div
+                        key={p.prodotto_id}
+                        className="flex items-center justify-between py-2 text-sm"
+                      >
+                        <span
+                          className={
+                            p.posizione === 1
+                              ? "font-medium text-green-700"
+                              : "text-neutral-600"
+                          }
+                        >
+                          {p.posizione === 1 && "✓ "}
+                          {p.fornitore_nome} — {p.descrizione}
+                        </span>
+                        <span className="text-neutral-500">
+                          {p.prezzo_per_kg != null
+                            ? `€${p.prezzo_per_kg.toFixed(2)}/kg`
+                            : `€${p.prezzo_unitario?.toFixed(2) ?? "—"}`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
