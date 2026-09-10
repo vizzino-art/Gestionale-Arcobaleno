@@ -33,18 +33,20 @@ export function FornitoriClient({ fornitoriIniziali }: Props) {
         </button>
       </div>
 
-      <div className="divide-y divide-neutral-200 rounded-xl border border-neutral-200 bg-white">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {fornitori.map((f) => (
-          <div key={f.id} className="flex items-center justify-between gap-4 p-4">
+          <div
+            key={f.id}
+            className="flex flex-col justify-between gap-3 rounded-xl border border-neutral-200 bg-white p-4"
+          >
             <div>
               <p className="font-medium text-neutral-900">{f.nome}</p>
-              <p className="text-sm text-neutral-500">
-                {f.telefono ?? "—"} · {f.email ?? "—"}
-              </p>
+              <p className="mt-1 text-sm text-neutral-500">{f.telefono ?? "—"}</p>
+              <p className="text-sm text-neutral-500">{f.email ?? "—"}</p>
             </div>
             <button
               onClick={() => setModale({ modo: "modifica", fornitore: f })}
-              className="shrink-0 rounded-md bg-neutral-100 px-3 py-2 text-sm text-neutral-500 hover:bg-neutral-200"
+              className="shrink-0 self-start rounded-md bg-neutral-100 px-3 py-2 text-sm text-neutral-500 hover:bg-neutral-200"
               title="Modifica fornitore"
             >
               ✏️ Modifica
