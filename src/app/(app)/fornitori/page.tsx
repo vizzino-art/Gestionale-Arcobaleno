@@ -7,7 +7,7 @@ export default async function FornitoriPage() {
   const { data, error } = await supabase
     .from("fornitori")
     .select("*")
-    .order("ordine", { ascending: true });
+    .order("nome", { ascending: true });
 
   const fornitori = (data ?? []) as Fornitore[];
 
