@@ -1,0 +1,139 @@
+import { NextRequest, NextResponse } from "next/server";
+
+// Route Handler server-side: legge una foto di bolla/fattura e ne estrae i
+// dati strutturati tramite l'API di Claude (vision). La chiave resta sul
+// server (variabile d'ambiente ANTHROPIC_API_KEY su Vercel), mai esposta al
+// browser.
+
+export const runtime = "nodejs";
+
+const PROMPT_SISTEMA = `Sei un assistente che legge bolle di consegna (DDT) o fatture di fornitori alimentari italiani da una foto e ne estrae i dati in JSON.
+
+Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, in questo formato esatto:
+{
+  "numero_ddt": "numero del documento, es. \\"4261\\", o null se non leggibile",
+  "data": "data del documento in formato YYYY-MM-DD, o null se non leggibile",
+  "righe": [
+    {
+      "codice_articolo": "codice articolo cosi' come scritto, o null",
+      "descrizione": "descrizione del prodotto cosi' come scritta",
+      "quantita": 0,
+      "prezzo_unitario": 0,
+      "um": "unita' di misura cosi' come scritta, es. KG, PZ, CF, CT"
+    }
+  ]
+}
+
+Regole importanti:
+- Estrai SOLO i dati visibili nella foto, non inventare ne' arrotondare in modo creativo.
+- "prezzo_unitario" e' il prezzo per singola unita' (quello vicino alla UM), MAI il prezzo totale della riga (quantita' moltiplicata per il prezzo).
+- I numeri nel JSON vanno scritti col punto decimale (es. 5.94), anche se sulla bolla sono scritti con la virgola.
+- Se un valore non e' leggibile, usa null per quel campo invece di indovinare.
+- Se la foto non sembra una bolla/fattura, rispondi con {"numero_ddt": null, "data": null, "righe": []}.`;
+
+type RigaEstratta = {
+  codice_articolo: string | null;
+  descrizione: string;
+  quantita: number | null;
+  prezzo_unitario: number | null;
+  um: string | null;
+};
+
+type RispostaEstrazione = {
+  numero_ddt: string | null;
+  data: string | null;
+  righe: RigaEstratta[];
+};
+
+export async function POST(req: NextRequest) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json(
+      { errore: "Chiave API Anthropic non configurata sul server (variabile ANTHROPIC_API_KEY mancante su Vercel)." },
+      { status: 500 }
+    );
+  }
+
+  const body = await req.json().catch(() => null);
+  const immagineBase64: string | undefined = body?.immagine;
+  const mediaType: string | undefined = body?.mediaType;
+
+  if (!immagineBase64 || !mediaType) {
+    return NextResponse.json({ errore: "Immagine mancante nella richiesta." }, { status: 400 });
+  }
+
+  try {
+    const risposta = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 4096,
+        system: PROMPT_SISTEMA,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "image",
+                source: { type: "base64", media_type: mediaType, data: immagineBase64 },
+              },
+              {
+                type: "text",
+                text: "Estrai i dati da questa bolla/fattura secondo le istruzioni del sistema.",
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!risposta.ok) {
+      const testo = await risposta.text();
+      return NextResponse.json(
+        { errore: `Errore dall'API Claude (${risposta.status}): ${testo.slice(0, 300)}` },
+        { status: 502 }
+      );
+    }
+
+    const dati = await risposta.json();
+    const testoRisposta: string = dati?.content?.[0]?.text ?? "";
+
+    let estratto: RispostaEstrazione;
+    try {
+      // Il modello a volte racchiude comunque il JSON in un blocco ```json — lo ripuliamo.
+      const pulito = testoRisposta
+        .replace(/^```json\s*/i, "")
+        .replace(/^```\s*/i, "")
+        .replace(/```\s*$/i, "")
+        .trim();
+      estratto = JSON.parse(pulito);
+    } catch {
+      return NextResponse.json(
+        {
+          errore:
+            "Non sono riuscito a interpretare la risposta. Riprova con una foto più chiara, a fuoco e con buona luce.",
+        },
+        { status: 502 }
+      );
+    }
+
+    if (!Array.isArray(estratto.righe)) {
+      return NextResponse.json(
+        { errore: "La foto non sembra contenere una bolla/fattura leggibile." },
+        { status: 422 }
+      );
+    }
+
+    return NextResponse.json(estratto);
+  } catch (e) {
+    return NextResponse.json(
+      { errore: `Errore di rete verso l'API Claude: ${e instanceof Error ? e.message : String(e)}` },
+      { status: 502 }
+    );
+  }
+}
