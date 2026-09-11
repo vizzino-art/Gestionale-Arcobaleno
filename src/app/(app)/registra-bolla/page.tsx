@@ -1,22 +1,26 @@
 import { createClient } from "@/lib/supabase/server";
 import { RegistraBollaClient } from "@/components/RegistraBollaClient";
-import type { Fornitore, Prodotto } from "@/lib/types";
+import type { Categoria, Fornitore, Prodotto } from "@/lib/types";
 
 export default async function RegistraBollaPage() {
   const supabase = await createClient();
 
-  const [{ data: fornitori, error: erroreFornitori }, { data: prodotti, error: erroreProdotti }] =
-    await Promise.all([
-      supabase.from("fornitori").select("*").order("nome", { ascending: true }),
-      supabase
-        .from("prodotti")
-        .select("*")
-        .eq("attivo", true)
-        .order("fornitore_id", { ascending: true })
-        .order("ordine", { ascending: true }),
-    ]);
+  const [
+    { data: fornitori, error: erroreFornitori },
+    { data: prodotti, error: erroreProdotti },
+    { data: categorie, error: erroreCategorie },
+  ] = await Promise.all([
+    supabase.from("fornitori").select("*").order("nome", { ascending: true }),
+    supabase
+      .from("prodotti")
+      .select("*")
+      .eq("attivo", true)
+      .order("fornitore_id", { ascending: true })
+      .order("ordine", { ascending: true }),
+    supabase.from("categorie").select("*").order("nome", { ascending: true }),
+  ]);
 
-  const errore = erroreFornitori || erroreProdotti;
+  const errore = erroreFornitori || erroreProdotti || erroreCategorie;
 
   return (
     <div>
@@ -36,6 +40,7 @@ export default async function RegistraBollaPage() {
         <RegistraBollaClient
           fornitori={(fornitori ?? []) as Fornitore[]}
           prodotti={(prodotti ?? []) as Prodotto[]}
+          categorie={(categorie ?? []) as Categoria[]}
         />
       )}
     </div>
