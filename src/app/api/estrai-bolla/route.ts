@@ -17,6 +17,13 @@ Molte bolle, specialmente di fornitori di pesce/surgelati, hanno sotto ogni riga
 
 Queste righe si trovano SEMPRE subito sotto (o comunque vicino) alla riga del prodotto a cui si riferiscono, spesso in carattere piu' piccolo, e in realta' NON hanno un proprio prezzo/quantita'/UM: qualsiasi numero che compare vicino a una di queste righe appartiene al prodotto sopra, mai a una nuova riga. Conta come vero prodotto solo una riga che ha un nome di articolo reale (es. "GAMBERI CODE C1 6x2 KG", "TOTANO PULITO 10x1 KG") allineato con le colonne della tabella (quantita', prezzo unitario, UM) nella parte principale del documento — non le righe di testo esplicativo/normativo che seguono.
 
+Alcune bolle (specialmente quelle con molte colonne) hanno PIU' colonne numeriche che possono sembrare tutte "la quantita'": es. "PEZZI X COLLO", "COLLI", "QUANTITA'", "U.M.", "PREZ.UNIT.", "%SC" (sconto), "IVA", "IMPORTO". In questi casi:
+- come "quantita" usa SEMPRE e SOLO il valore della colonna intestata esattamente "QUANTITA'" (o equivalente: il totale nella unita' di misura della riga, es. i KG totali venduti) — MAI "PEZZI X COLLO" o "COLLI", che descrivono l'imballaggio e non la quantita' venduta, anche se il numero sembra plausibile.
+- come "prezzo_unitario" usa SEMPRE e SOLO la colonna intestata "PREZ.UNIT." o "PREZZO UNITARIO" — MAI la colonna sconto (%SC) o IVA o altre colonne vicine.
+- se la riga mostra anche un importo totale di riga (colonna tipo "IMPORTO" o "TOTALE RIGA"), usalo per controllare il tuo lavoro prima di rispondere: quantita' moltiplicata per prezzo_unitario deve corrispondere (circa) a quell'importo. Se non corrisponde, hai preso la colonna sbagliata: rileggi la riga e correggi quantita' e/o prezzo_unitario finche' il conto torna, prima di includerla nella risposta.
+
+Leggi il numero del documento e la data con la massima attenzione, cifra per cifra: sono numeri importanti per riconciliare la bolla con la fattura del fornitore, e un solo numero letto male la rende irriconoscibile.
+
 Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, in questo formato esatto:
 {
   "numero_ddt": "numero del documento, es. \\"4261\\", o null se non leggibile",
