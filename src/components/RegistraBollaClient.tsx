@@ -130,6 +130,31 @@ async function ridimensionaEComprimi(file: File): Promise<{ base64: string; medi
   return { base64, mediaType: "image/jpeg" };
 }
 
+// Un PDF (es. fattura ricevuta già in digitale via email) va inviato così
+// com'è, senza ridimensionamento/compressione: Claude legge i PDF
+// direttamente. Limite prudenziale sul peso del file per restare sotto il
+// tetto di ~4,5 MB per richiesta imposto da Vercel sulle funzioni server
+// (un PDF più pesante andrebbe spezzato o sostituito da una foto).
+const PDF_MAX_BYTES = 3 * 1024 * 1024;
+
+async function leggiPdfComeBase64(file: File): Promise<{ base64: string; mediaType: string }> {
+  if (file.size > PDF_MAX_BYTES) {
+    throw new Error(
+      "Questo PDF è troppo pesante (oltre 3 MB) per essere inviato. Prova a esportare una versione più leggera, oppure fai direttamente una foto del documento."
+    );
+  }
+  const base64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const risultato = reader.result as string;
+      resolve(risultato.split(",")[1] ?? "");
+    };
+    reader.onerror = () => reject(new Error("Lettura del PDF fallita"));
+    reader.readAsDataURL(file);
+  });
+  return { base64, mediaType: "application/pdf" };
+}
+
 function arrotonda(n: number): number {
   return Math.round(n * 100) / 100;
 }
@@ -142,6 +167,7 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
   const [numeroDdt, setNumeroDdt] = useState("");
   const [dataDocumento, setDataDocumento] = useState("");
   const [anteprimaUrl, setAnteprimaUrl] = useState<string | null>(null);
+  const [anteprimaPdfNome, setAnteprimaPdfNome] = useState<string | null>(null);
   const [righe, setRighe] = useState<RigaLavoro[]>([]);
   const [estrazioneFatta, setEstrazioneFatta] = useState(false);
 
@@ -178,13 +204,21 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
   async function scattaOCarica(file: File) {
     setErrore(null);
     setSalvato(false);
-    setAnteprimaUrl(URL.createObjectURL(file));
     setCaricando(true);
     setEstrazioneFatta(false);
     setRighe([]);
 
+    const ePdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    if (ePdf) {
+      setAnteprimaUrl(null);
+      setAnteprimaPdfNome(file.name);
+    } else {
+      setAnteprimaPdfNome(null);
+      setAnteprimaUrl(URL.createObjectURL(file));
+    }
+
     try {
-      const { base64, mediaType } = await ridimensionaEComprimi(file);
+      const { base64, mediaType } = ePdf ? await leggiPdfComeBase64(file) : await ridimensionaEComprimi(file);
       const risposta = await fetch("/api/estrai-bolla", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -392,6 +426,7 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
               setRighe([]);
               setEstrazioneFatta(false);
               setAnteprimaUrl(null);
+              setAnteprimaPdfNome(null);
             }}
             className="mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-500"
           >
@@ -406,7 +441,7 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
         <input
           ref={inputFotoRef}
           type="file"
-          accept="image/*"
+          accept="image/*,application/pdf"
           capture="environment"
           className="hidden"
           onChange={(e) => {
@@ -419,12 +454,17 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
           disabled={!fornitoreId || caricando}
           className="w-full rounded-lg bg-neutral-900 px-4 py-3 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
         >
-          {caricando ? "Leggo la bolla…" : "📷 Fai foto o carica bolla"}
+          {caricando ? "Leggo la bolla…" : "📷 Fai foto o carica bolla/PDF"}
         </button>
 
         {anteprimaUrl && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={anteprimaUrl} alt="Anteprima bolla" className="mt-3 max-h-48 rounded-lg border border-neutral-200 object-contain" />
+        )}
+        {anteprimaPdfNome && (
+          <p className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-600">
+            📄 {anteprimaPdfNome}
+          </p>
         )}
       </div>
 
