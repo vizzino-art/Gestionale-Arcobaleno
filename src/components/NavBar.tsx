@@ -7,6 +7,7 @@ const VOCI = [
   { href: "/pannello", label: "Pannello" },
   { href: "/riepilogo", label: "Riepilogo" },
   { href: "/confronta", label: "Confronta" },
+  { href: "/registra-bolla", label: "Registra bolla" },
 ];
 
 export function NavBar() {
