@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { prossimoOrdine } from "@/lib/prodotti";
-import type { Fornitore, Prodotto } from "@/lib/types";
+import type { Categoria, Fornitore, Prodotto } from "@/lib/types";
 
 // Sentinella per "questo prodotto non esiste ancora, crealo" nel menu a
 // tendina di abbinamento — non è un uuid reale, viene risolta in salvaTutto().
@@ -12,6 +12,7 @@ const NUOVO_PRODOTTO = "NUOVO";
 type Props = {
   fornitori: Fornitore[];
   prodotti: Prodotto[];
+  categorie: Categoria[];
 };
 
 type RigaEstratta = {
@@ -41,6 +42,7 @@ type RigaLavoro = {
   prodottoId: string; // "" = nessuna corrispondenza scelta
   aggiornaPrezzo: boolean;
   umConfermata: boolean; // per prodotti nuovi con UM non riconosciuta: conferma esplicita di Mauro
+  categoriaId: string; // solo per prodotti nuovi: "" = nessuna, la sceglie dopo in Pannello
 };
 
 function normalizza(s: string): string {
@@ -132,7 +134,7 @@ function arrotonda(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-export function RegistraBollaClient({ fornitori, prodotti }: Props) {
+export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const inputFotoRef = useRef<HTMLInputElement>(null);
 
@@ -212,6 +214,7 @@ export function RegistraBollaClient({ fornitori, prodotti }: Props) {
           prodottoId,
           aggiornaPrezzo: true,
           umConfermata: false,
+          categoriaId: "",
         };
       });
       setRighe(nuoveRighe);
@@ -280,6 +283,7 @@ export function RegistraBollaClient({ fornitori, prodotti }: Props) {
           .from("prodotti")
           .insert({
             fornitore_id: fornitoreId,
+            categoria_id: r.categoriaId || null,
             descrizione: r.descrizione,
             codice_articolo: r.codiceArticolo || null,
             um: r.um || null,
@@ -550,11 +554,35 @@ export function RegistraBollaClient({ fornitori, prodotti }: Props) {
                   )}
 
                   {r.prodottoId === NUOVO_PRODOTTO && (
-                    <p className="mt-1.5 text-xs text-blue-600">
-                      Verrà creato un nuovo prodotto per {fornitori.find((f) => f.id === fornitoreId)?.nome ?? "questo fornitore"} con questa descrizione, codice e prezzo. Ricordati di
-                      impostare categoria e peso/kg in Pannello se vuoi includerlo nel confronto
-                      prezzi.
-                    </p>
+                    <div className="mt-2 rounded-md bg-blue-50 p-2.5">
+                      <p className="text-xs text-blue-800">
+                        Verrà creato un nuovo prodotto per{" "}
+                        {fornitori.find((f) => f.id === fornitoreId)?.nome ?? "questo fornitore"}{" "}
+                        con questa descrizione, codice e prezzo.
+                      </p>
+                      <label className="mt-2 block text-xs text-blue-800">
+                        Categoria (per il confronto prezzi — facoltativa, puoi impostarla anche
+                        dopo in Pannello)
+                        <select
+                          value={r.categoriaId}
+                          onChange={(e) => aggiornaRiga(r.chiave, "categoriaId", e.target.value)}
+                          className="mt-1 block w-full rounded-md border border-blue-200 bg-white px-2 py-1.5 text-sm text-neutral-900 outline-none focus:border-blue-400"
+                        >
+                          <option value="">— nessuna, la categorizzo dopo —</option>
+                          {categorie.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.nome}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {!r.categoriaId && (
+                        <p className="mt-1.5 text-xs text-blue-700">
+                          Senza categoria e peso/kg il prodotto non entra nel confronto prezzi, ma
+                          viene comunque creato e registrato nello storico.
+                        </p>
+                      )}
+                    </div>
                   )}
 
                   {r.prodottoId === NUOVO_PRODOTTO && umSospetta(r.um) && (
