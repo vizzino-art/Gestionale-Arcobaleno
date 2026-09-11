@@ -40,6 +40,7 @@ type RigaLavoro = {
   um: string;
   prodottoId: string; // "" = nessuna corrispondenza scelta
   aggiornaPrezzo: boolean;
+  umConfermata: boolean; // per prodotti nuovi con UM non riconosciuta: conferma esplicita di Mauro
 };
 
 function normalizza(s: string): string {
@@ -152,6 +153,22 @@ export function RegistraBollaClient({ fornitori, prodotti }: Props) {
     [prodotti, fornitoreId]
   );
 
+  // Unità di misura già in uso nel gestionale (su qualsiasi fornitore): serve
+  // solo per accorgersi se la UM letta dalla foto per un prodotto NUOVO è
+  // probabilmente un errore di lettura, non per validare prodotti già
+  // esistenti (quelli hanno già la loro UM corretta a sistema).
+  const umConosciute = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of prodotti) {
+      if (p.um) set.add(normalizza(p.um));
+    }
+    return set;
+  }, [prodotti]);
+
+  function umSospetta(um: string): boolean {
+    return !um.trim() || !umConosciute.has(normalizza(um));
+  }
+
   function prodottoDa(id: string): Prodotto | undefined {
     return prodottiFornitore.find((p) => p.id === id);
   }
@@ -194,6 +211,7 @@ export function RegistraBollaClient({ fornitori, prodotti }: Props) {
           um: r.um ?? "",
           prodottoId,
           aggiornaPrezzo: true,
+          umConfermata: false,
         };
       });
       setRighe(nuoveRighe);
@@ -221,6 +239,8 @@ export function RegistraBollaClient({ fornitori, prodotti }: Props) {
     setErrore(null);
 
     const daSaltare: string[] = [];
+    const daVerificare: string[] = [];
+    const righeRiuscite = new Set<string>();
     const inserimentiStorico: {
       prodotto_id: string;
       fornitore_id: string;
@@ -248,6 +268,14 @@ export function RegistraBollaClient({ fornitori, prodotti }: Props) {
       let prodottoId = r.prodottoId;
 
       if (prodottoId === NUOVO_PRODOTTO) {
+        // Prima di creare un prodotto nuovo mai visto, controlliamo che la
+        // UM letta dalla foto sia plausibile: se non è tra quelle già usate
+        // nel gestionale, non si salva finché Mauro non conferma (o non la
+        // corregge) — evita di popolare il catalogo con dati sbagliati.
+        if (umSospetta(r.um) && !r.umConfermata) {
+          daVerificare.push(r.descrizione);
+          continue;
+        }
         const { data: nuovo, error } = await supabase
           .from("prodotti")
           .insert({
@@ -279,6 +307,7 @@ export function RegistraBollaClient({ fornitori, prodotti }: Props) {
         aggiornamentiPrezzo.push({ id: prodottoId, prezzo });
       }
 
+      righeRiuscite.add(r.chiave);
       inserimentiStorico.push({
         prodotto_id: prodottoId,
         fornitore_id: fornitoreId,
@@ -315,18 +344,35 @@ export function RegistraBollaClient({ fornitori, prodotti }: Props) {
     }
 
     setSalvando(false);
-    setSalvato(true);
-    setRighe([]);
-    setEstrazioneFatta(false);
-    setAnteprimaUrl(null);
-    setNumeroDdt("");
-    setDataDocumento("");
-    if (inputFotoRef.current) inputFotoRef.current.value = "";
+    setSalvato(righeRiuscite.size > 0);
 
+    // Le righe salvate con successo spariscono dalla revisione; quelle
+    // saltate (nessun abbinamento) o in attesa di conferma (UM sospetta)
+    // restano visibili così si possono correggere e salvare di nuovo senza
+    // dover rifare la foto da capo.
+    setRighe((prev) => prev.filter((r) => !righeRiuscite.has(r.chiave)));
+
+    if (righeRiuscite.size === righe.length) {
+      setEstrazioneFatta(false);
+      setAnteprimaUrl(null);
+      setNumeroDdt("");
+      setDataDocumento("");
+      if (inputFotoRef.current) inputFotoRef.current.value = "";
+    }
+
+    const messaggi: string[] = [];
     if (daSaltare.length > 0) {
-      setErrore(
-        `Attenzione: ${daSaltare.length} riga/e non abbinata/e a un prodotto non è stata salvata (${daSaltare.join(", ")}). Aggiungi prima il prodotto in Pannello, poi registra di nuovo quella riga.`
+      messaggi.push(
+        `${daSaltare.length} riga/e non abbinata/e a un prodotto (${daSaltare.join(", ")}): scegli un prodotto dal menu o "+ Crea nuovo prodotto".`
       );
+    }
+    if (daVerificare.length > 0) {
+      messaggi.push(
+        `${daVerificare.length} riga/e in attesa di conferma sull'unità di misura (${daVerificare.join(", ")}): correggi la UM oppure spunta "Confermo" per salvarla comunque.`
+      );
+    }
+    if (messaggi.length > 0) {
+      setErrore(`Attenzione: ${messaggi.join(" ")}`);
     }
   }
 
@@ -509,6 +555,24 @@ export function RegistraBollaClient({ fornitori, prodotti }: Props) {
                       impostare categoria e peso/kg in Pannello se vuoi includerlo nel confronto
                       prezzi.
                     </p>
+                  )}
+
+                  {r.prodottoId === NUOVO_PRODOTTO && umSospetta(r.um) && (
+                    <div className="mt-2 flex items-center justify-between gap-2 rounded-md bg-amber-50 px-2.5 py-2 text-xs">
+                      <span className="text-amber-800">
+                        {r.um.trim()
+                          ? `UM "${r.um}" non è tra quelle già usate nel gestionale: potrebbe essere letta male dalla foto.`
+                          : "UM non letta dalla foto: controlla e inseriscila."}
+                      </span>
+                      <label className="flex shrink-0 items-center gap-1.5 text-amber-800">
+                        <input
+                          type="checkbox"
+                          checked={r.umConfermata}
+                          onChange={(e) => aggiornaRiga(r.chiave, "umConfermata", e.target.checked)}
+                        />
+                        Confermo
+                      </label>
+                    </div>
                   )}
 
                   {prezzoCambiato && (
