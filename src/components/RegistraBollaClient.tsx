@@ -2,7 +2,12 @@
 
 import { useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { prossimoOrdine } from "@/lib/prodotti";
 import type { Fornitore, Prodotto } from "@/lib/types";
+
+// Sentinella per "questo prodotto non esiste ancora, crealo" nel menu a
+// tendina di abbinamento — non è un uuid reale, viene risolta in salvaTutto().
+const NUOVO_PRODOTTO = "NUOVO";
 
 type Props = {
   fornitori: Fornitore[];
@@ -41,31 +46,49 @@ function normalizza(s: string): string {
   return s.toUpperCase().replace(/[^A-Z0-9À-Ù]+/g, " ").trim();
 }
 
-// Abbinamento automatico: prima per codice articolo esatto, poi per
-// descrizione esatta, poi per sovrapposizione di parole (solo se abbastanza
-// alta) — sempre e comunque modificabile a mano dopo, non è mai definitivo
-// finché non si salva.
+// Punteggio di somiglianza tra la descrizione letta dalla foto e quella di
+// un prodotto a sistema: 1 se identiche, altrimenti frazione di parole (>2
+// lettere) della riga estratta che compaiono anche nella descrizione a
+// sistema.
+function punteggioDescrizione(descRigaNormalizzata: string, prodotto: Prodotto): number {
+  const descP = normalizza(prodotto.descrizione);
+  if (descP === descRigaNormalizzata) return 1;
+  const parole = descRigaNormalizzata.split(" ").filter((w) => w.length > 2);
+  if (parole.length === 0) return 0;
+  const paroleP = new Set(descP.split(" "));
+  const comuni = parole.filter((w) => paroleP.has(w)).length;
+  return comuni / parole.length;
+}
+
+// Abbinamento automatico — sempre e comunque modificabile a mano dopo, non è
+// mai definitivo finché non si salva. Doppio controllo per evitare falsi
+// positivi: un codice articolo letto male dalla foto può coincidere per
+// caso con quello di un prodotto sbagliato, quindi un match per codice
+// viene accettato solo se anche la descrizione lo conferma almeno un po'
+// (soglia più bassa di quella usata quando si va a descrizione da sola,
+// perché il codice esatto è già un indizio forte). Se il codice combacia ma
+// la descrizione è troppo diversa, si prova comunque con la sola
+// descrizione invece di fidarsi ciecamente del codice.
 function trovaMatch(riga: RigaEstratta, prodottiFornitore: Prodotto[]): string {
+  const desc = normalizza(riga.descrizione);
+
   if (riga.codice_articolo) {
     const codice = normalizza(riga.codice_articolo);
-    const perCodice = prodottiFornitore.find(
+    const candidatiPerCodice = prodottiFornitore.filter(
       (p) => p.codice_articolo && normalizza(p.codice_articolo) === codice
     );
-    if (perCodice) return perCodice.id;
+    const confermatoDaDescrizione = candidatiPerCodice.find(
+      (p) => punteggioDescrizione(desc, p) >= 0.4
+    );
+    if (confermatoDaDescrizione) return confermatoDaDescrizione.id;
   }
 
-  const desc = normalizza(riga.descrizione);
   const perDescrizioneEsatta = prodottiFornitore.find((p) => normalizza(p.descrizione) === desc);
   if (perDescrizioneEsatta) return perDescrizioneEsatta.id;
 
-  const parole = desc.split(" ").filter((w) => w.length > 2);
-  if (parole.length === 0) return "";
-
   let migliore: { id: string; punteggio: number } | null = null;
   for (const p of prodottiFornitore) {
-    const paroleP = new Set(normalizza(p.descrizione).split(" "));
-    const comuni = parole.filter((w) => paroleP.has(w)).length;
-    const punteggio = comuni / parole.length;
+    const punteggio = punteggioDescrizione(desc, p);
     if (punteggio >= 0.6 && (!migliore || punteggio > migliore.punteggio)) {
       migliore = { id: p.id, punteggio };
     }
@@ -208,11 +231,13 @@ export function RegistraBollaClient({ fornitori, prodotti }: Props) {
     }[] = [];
     const aggiornamentiPrezzo: { id: string; prezzo: number }[] = [];
 
+    // Contatore locale per l'"ordine" dei prodotti creati in questa stessa
+    // bolla: prossimoOrdine() guarda i prodotti già esistenti, ma se in
+    // questo salvataggio ne creiamo più di uno vanno messi in coda uno
+    // dopo l'altro, non tutti con lo stesso valore.
+    let prossimoOrdineNuovo = prossimoOrdine(prodottiFornitore);
+
     for (const r of righe) {
-      if (!r.prodottoId) {
-        daSaltare.push(r.descrizione);
-        continue;
-      }
       const prezzo = parseFloat(r.prezzo.replace(",", "."));
       if (isNaN(prezzo)) {
         daSaltare.push(r.descrizione);
@@ -220,18 +245,48 @@ export function RegistraBollaClient({ fornitori, prodotti }: Props) {
       }
       const quantita = r.quantita ? parseFloat(r.quantita.replace(",", ".")) : null;
 
+      let prodottoId = r.prodottoId;
+
+      if (prodottoId === NUOVO_PRODOTTO) {
+        const { data: nuovo, error } = await supabase
+          .from("prodotti")
+          .insert({
+            fornitore_id: fornitoreId,
+            descrizione: r.descrizione,
+            codice_articolo: r.codiceArticolo || null,
+            um: r.um || null,
+            prezzo_listino: prezzo,
+            sconto1: 0,
+            sconto2: 0,
+            sconto3: 0,
+            ordine: prossimoOrdineNuovo,
+          })
+          .select("id")
+          .single();
+        if (error || !nuovo) {
+          setErrore(`Errore nella creazione del prodotto "${r.descrizione}": ${error?.message ?? "sconosciuto"}`);
+          setSalvando(false);
+          return;
+        }
+        prossimoOrdineNuovo += 1;
+        prodottoId = nuovo.id;
+        // Il prezzo è già quello giusto appena inserito: non serve un
+        // aggiornamento separato più sotto.
+      } else if (!prodottoId) {
+        daSaltare.push(r.descrizione);
+        continue;
+      } else if (r.aggiornaPrezzo) {
+        aggiornamentiPrezzo.push({ id: prodottoId, prezzo });
+      }
+
       inserimentiStorico.push({
-        prodotto_id: r.prodottoId,
+        prodotto_id: prodottoId,
         fornitore_id: fornitoreId,
         data: dataDocumento || new Date().toISOString().slice(0, 10),
         numero_fattura: numeroDdt ? `DDT ${numeroDdt}` : null,
         prezzo,
         quantita,
       });
-
-      if (r.aggiornaPrezzo) {
-        aggiornamentiPrezzo.push({ id: r.prodottoId, prezzo });
-      }
     }
 
     if (inserimentiStorico.length > 0) {
@@ -430,6 +485,7 @@ export function RegistraBollaClient({ fornitori, prodotti }: Props) {
                       className="mt-1 block w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm outline-none focus:border-neutral-500"
                     >
                       <option value="">— nessuna corrispondenza, scegli tu —</option>
+                      <option value={NUOVO_PRODOTTO}>+ Crea nuovo prodotto con questi dati</option>
                       {prodottiFornitore.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.descrizione}
@@ -440,8 +496,18 @@ export function RegistraBollaClient({ fornitori, prodotti }: Props) {
 
                   {!r.prodottoId && (
                     <p className="mt-1.5 text-xs text-amber-600">
-                      Nessun prodotto abbinato: questa riga non verrà salvata finché non ne scegli
-                      uno (o la rimuovi con ✕).
+                      Nessun prodotto abbinato: scegli un prodotto esistente dal menu, oppure
+                      &quot;+ Crea nuovo prodotto&quot; per aggiungerlo al catalogo di questo
+                      fornitore salvando questa bolla (potrai poi completare categoria e peso/kg
+                      in Pannello, per includerlo anche nel confronto prezzi).
+                    </p>
+                  )}
+
+                  {r.prodottoId === NUOVO_PRODOTTO && (
+                    <p className="mt-1.5 text-xs text-blue-600">
+                      Verrà creato un nuovo prodotto per {fornitori.find((f) => f.id === fornitoreId)?.nome ?? "questo fornitore"} con questa descrizione, codice e prezzo. Ricordati di
+                      impostare categoria e peso/kg in Pannello se vuoi includerlo nel confronto
+                      prezzi.
                     </p>
                   )}
 
