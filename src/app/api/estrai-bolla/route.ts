@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-const PROMPT_SISTEMA = `Sei un assistente che legge bolle di consegna (DDT) o fatture di fornitori alimentari italiani da una foto e ne estrae i dati in JSON.
+const PROMPT_SISTEMA = `Sei un assistente che legge bolle di consegna (DDT) o fatture di fornitori alimentari italiani, da una foto o da un PDF, e ne estrae i dati in JSON.
 
 Molte bolle, specialmente di fornitori di pesce/surgelati, hanno sotto ogni riga di prodotto vero e proprio una o piu' righe di testo aggiuntivo che NON sono prodotti separati e vanno SEMPRE ignorate (mai trasformate in una riga a se' stante in "righe"):
 - riferimento all'ordine del cliente, es. "Rif. Ord. 12.380 del 07/09/2026 ..."
@@ -94,10 +94,15 @@ export async function POST(req: NextRequest) {
           {
             role: "user",
             content: [
-              {
-                type: "image",
-                source: { type: "base64", media_type: mediaType, data: immagineBase64 },
-              },
+              mediaType === "application/pdf"
+                ? {
+                    type: "document",
+                    source: { type: "base64", media_type: mediaType, data: immagineBase64 },
+                  }
+                : {
+                    type: "image",
+                    source: { type: "base64", media_type: mediaType, data: immagineBase64 },
+                  },
               {
                 type: "text",
                 text: "Estrai i dati da questa bolla/fattura secondo le istruzioni del sistema.",
@@ -132,7 +137,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           errore:
-            "Non sono riuscito a interpretare la risposta. Riprova con una foto più chiara, a fuoco e con buona luce.",
+            "Non sono riuscito a interpretare la risposta. Se era una foto, riprova con un'inquadratura più chiara, a fuoco e con buona luce.",
         },
         { status: 502 }
       );
@@ -140,7 +145,7 @@ export async function POST(req: NextRequest) {
 
     if (!Array.isArray(estratto.righe)) {
       return NextResponse.json(
-        { errore: "La foto non sembra contenere una bolla/fattura leggibile." },
+        { errore: "Il file non sembra contenere una bolla/fattura leggibile." },
         { status: 422 }
       );
     }
