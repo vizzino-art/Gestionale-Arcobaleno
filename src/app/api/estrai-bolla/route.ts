@@ -9,6 +9,14 @@ export const runtime = "nodejs";
 
 const PROMPT_SISTEMA = `Sei un assistente che legge bolle di consegna (DDT) o fatture di fornitori alimentari italiani da una foto e ne estrae i dati in JSON.
 
+Molte bolle, specialmente di fornitori di pesce/surgelati, hanno sotto ogni riga di prodotto vero e proprio una o piu' righe di testo aggiuntivo che NON sono prodotti separati e vanno SEMPRE ignorate (mai trasformate in una riga a se' stante in "righe"):
+- riferimento all'ordine del cliente, es. "Rif. Ord. 12.380 del 07/09/2026 ..."
+- tracciabilita' pesce obbligatoria per legge, es. "Prodotto pescato in ...", "Prodotto allevato in ...", zona/area FAO, "Attrezzo ..."
+- lotto e scadenza, es. "Lotto: 002614100 Scadenza/TMC: 22/11/2026", "Lotto fornitore: ..."
+- note legali o riferimenti a leggi/articoli, condizioni di vendita, diciture obbligatorie stampate in corpo piccolo
+
+Queste righe si trovano SEMPRE subito sotto (o comunque vicino) alla riga del prodotto a cui si riferiscono, spesso in carattere piu' piccolo, e in realta' NON hanno un proprio prezzo/quantita'/UM: qualsiasi numero che compare vicino a una di queste righe appartiene al prodotto sopra, mai a una nuova riga. Conta come vero prodotto solo una riga che ha un nome di articolo reale (es. "GAMBERI CODE C1 6x2 KG", "TOTANO PULITO 10x1 KG") allineato con le colonne della tabella (quantita', prezzo unitario, UM) nella parte principale del documento — non le righe di testo esplicativo/normativo che seguono.
+
 Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, in questo formato esatto:
 {
   "numero_ddt": "numero del documento, es. \\"4261\\", o null se non leggibile",
@@ -29,6 +37,7 @@ Regole importanti:
 - "prezzo_unitario" e' il prezzo per singola unita' (quello vicino alla UM), MAI il prezzo totale della riga (quantita' moltiplicata per il prezzo).
 - I numeri nel JSON vanno scritti col punto decimale (es. 5.94), anche se sulla bolla sono scritti con la virgola.
 - Se un valore non e' leggibile, usa null per quel campo invece di indovinare.
+- Nel dubbio se una riga sia un prodotto vero o una nota/tracciabilita' come sopra, NON includerla: e' meglio saltare un prodotto (Mauro se ne accorge e lo aggiunge a mano) che inventare una riga falsa con prezzo sbagliato.
 - Se la foto non sembra una bolla/fattura, rispondi con {"numero_ddt": null, "data": null, "righe": []}.`;
 
 type RigaEstratta = {
