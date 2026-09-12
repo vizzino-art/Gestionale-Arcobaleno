@@ -12,6 +12,7 @@ const VOCI = [
   { href: "/confronta", label: "Confronta" },
   { href: "/registra-bolla", label: "Registra bolla" },
   { href: "/storico-bolle", label: "Storico bolle" },
+  { href: "/registro-fatture", label: "Registro Fatture" },
 ];
 
 export function NavBar() {
