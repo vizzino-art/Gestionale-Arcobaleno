@@ -182,9 +182,9 @@ export function TrovaDoppioniModal({ prodotti, fornitori, onUnito, onChiudi }: P
 
                 <button
                   onClick={() => mantieniEntrambi(c)}
-                  className="mt-2 text-xs text-neutral-400 hover:text-neutral-600"
+                  className="mt-2 rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50"
                 >
-                  Mantieni entrambi (non è un doppione)
+                  ✕ Mantieni entrambi (non è un doppione)
                 </button>
               </div>
             );
