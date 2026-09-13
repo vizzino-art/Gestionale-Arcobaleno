@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { ModificaProdottoModal } from "./ModificaProdottoModal";
 import { ColoriCategorieModal } from "./ColoriCategorieModal";
 import { TrovaDoppioniModal } from "./TrovaDoppioniModal";
+import { GraficoStoricoPrezzo } from "./GraficoStoricoPrezzo";
 import { mappaColoriCategorie } from "@/lib/colori-categorie";
 import type { Categoria, Fornitore, Prodotto } from "@/lib/types";
 
@@ -243,6 +244,10 @@ export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categori
 
             {!caricando && storico.length === 0 && (
               <p className="text-sm text-neutral-500">Nessuna fattura storica per questo prodotto.</p>
+            )}
+
+            {!caricando && storico.length > 0 && (
+              <GraficoStoricoPrezzo punti={storico.map((r) => ({ data: r.data, prezzo: r.prezzo }))} />
             )}
 
             {!caricando && storico.length > 0 && (
