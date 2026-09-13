@@ -43,6 +43,7 @@ type FatturaEstratta = {
 
 export type FatturaSalvata = {
   id: string;
+  fornitore_id: string | null;
   fornitore_nome: string;
   fornitore_piva: string;
   numero: string;
@@ -138,6 +139,141 @@ async function leggiComeBase64(file: File): Promise<string> {
     };
     reader.onerror = () => reject(new Error("Lettura del file fallita."));
     reader.readAsDataURL(file);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Passo C — confronto prezzi fattura vs bolle già registrate per lo stesso
+// fornitore/prodotto (tabella storico_prezzi_fatture, alimentata da
+// "Registra bolla"). Stesso identico criterio di abbinamento riga→prodotto
+// già usato in Registra bolla (codice articolo confermato dalla descrizione,
+// poi descrizione esatta, poi sovrapposizione di parole), per coerenza.
+// ---------------------------------------------------------------------------
+
+function normalizzaTesto(s: string): string {
+  return s.toUpperCase().replace(/[^A-Z0-9À-Ù]+/g, " ").trim();
+}
+
+function punteggioDescrizione(descRigaNormalizzata: string, descrizioneProdotto: string): number {
+  const descP = normalizzaTesto(descrizioneProdotto);
+  if (descP === descRigaNormalizzata) return 1;
+  const parole = descRigaNormalizzata.split(" ").filter((w) => w.length > 2);
+  if (parole.length === 0) return 0;
+  const paroleP = new Set(descP.split(" "));
+  const comuni = parole.filter((w) => paroleP.has(w)).length;
+  return comuni / parole.length;
+}
+
+type ProdottoPerConfronto = { id: string; codice_articolo: string | null; descrizione: string };
+
+function trovaProdottoCorrispondente(
+  riga: { codice_articolo: string | null; descrizione: string },
+  prodotti: ProdottoPerConfronto[]
+): string | null {
+  const desc = normalizzaTesto(riga.descrizione);
+
+  if (riga.codice_articolo) {
+    const codice = normalizzaTesto(riga.codice_articolo);
+    const candidatiPerCodice = prodotti.filter(
+      (p) => p.codice_articolo && normalizzaTesto(p.codice_articolo) === codice
+    );
+    const confermatoDaDescrizione = candidatiPerCodice.find(
+      (p) => punteggioDescrizione(desc, p.descrizione) >= 0.4
+    );
+    if (confermatoDaDescrizione) return confermatoDaDescrizione.id;
+  }
+
+  const perDescrizioneEsatta = prodotti.find((p) => normalizzaTesto(p.descrizione) === desc);
+  if (perDescrizioneEsatta) return perDescrizioneEsatta.id;
+
+  let migliore: { id: string; punteggio: number } | null = null;
+  for (const p of prodotti) {
+    const punteggio = punteggioDescrizione(desc, p.descrizione);
+    if (punteggio >= 0.6 && (!migliore || punteggio > migliore.punteggio)) {
+      migliore = { id: p.id, punteggio };
+    }
+  }
+  return migliore?.id ?? null;
+}
+
+type RigaStoricoPerConfronto = {
+  prodotto_id: string;
+  data: string;
+  numero_fattura: string | null;
+  prezzo: number;
+};
+
+type EsitoConfrontoRiga = {
+  riga: RigaSalvata;
+  stato: "ok" | "senza-prodotto" | "senza-storico";
+  prezzoRiferimento: number | null;
+  dataRiferimento: string | null;
+  fonteRiferimento: "ddt" | "ultimo-prezzo" | null;
+  differenza: number | null;
+};
+
+// Per ogni riga: trova il prodotto a sistema, poi il prezzo bolla di
+// riferimento — quello della bolla con lo stesso DDT se la riga ne ha uno
+// (confronto esatto, stesso periodo di consegna), altrimenti l'ultimo prezzo
+// registrato in assoluto per quel prodotto (scelta di Mauro: più semplice,
+// trova sempre un confronto se esiste storico).
+function confrontaRighe(
+  righe: RigaSalvata[],
+  prodotti: ProdottoPerConfronto[],
+  storico: RigaStoricoPerConfronto[]
+): EsitoConfrontoRiga[] {
+  const storicoPerProdotto = new Map<string, RigaStoricoPerConfronto[]>();
+  for (const s of storico) {
+    const lista = storicoPerProdotto.get(s.prodotto_id) ?? [];
+    lista.push(s);
+    storicoPerProdotto.set(s.prodotto_id, lista);
+  }
+
+  return righe.map((riga) => {
+    const prodottoId = trovaProdottoCorrispondente(riga, prodotti);
+    if (!prodottoId) {
+      return {
+        riga,
+        stato: "senza-prodotto",
+        prezzoRiferimento: null,
+        dataRiferimento: null,
+        fonteRiferimento: null,
+        differenza: null,
+      };
+    }
+    const storicoProdotto = storicoPerProdotto.get(prodottoId) ?? [];
+    if (storicoProdotto.length === 0) {
+      return {
+        riga,
+        stato: "senza-storico",
+        prezzoRiferimento: null,
+        dataRiferimento: null,
+        fonteRiferimento: null,
+        differenza: null,
+      };
+    }
+
+    let riferimento: RigaStoricoPerConfronto | undefined;
+    let fonte: "ddt" | "ultimo-prezzo" = "ultimo-prezzo";
+    if (riga.ddt_numero) {
+      riferimento = storicoProdotto.find((s) => s.numero_fattura === `DDT ${riga.ddt_numero}`);
+      if (riferimento) fonte = "ddt";
+    }
+    if (!riferimento) {
+      riferimento = [...storicoProdotto].sort((a, b) => (a.data < b.data ? 1 : -1))[0];
+    }
+
+    const differenza =
+      riga.prezzo_unitario !== null ? riga.prezzo_unitario - riferimento.prezzo : null;
+
+    return {
+      riga,
+      stato: "ok",
+      prezzoRiferimento: riferimento.prezzo,
+      dataRiferimento: riferimento.data,
+      fonteRiferimento: fonte,
+      differenza,
+    };
   });
 }
 
@@ -290,6 +426,51 @@ export function RegistroFattureClient({ fornitori, fattureIniziali }: Props) {
     );
   }
 
+  // Passo C — confronto con le bolle, calcolato al volo quando Mauro lo
+  // richiede (bottone dentro la fattura), non automaticamente: interroga
+  // prodotti/storico_prezzi_fatture solo del fornitore di quella fattura.
+  const [confrontoInCorso, setConfrontoInCorso] = useState<Record<string, boolean>>({});
+  const [confrontoErrore, setConfrontoErrore] = useState<Record<string, string>>({});
+  const [confrontoRisultati, setConfrontoRisultati] = useState<Record<string, EsitoConfrontoRiga[]>>({});
+
+  async function confrontaConBolle(f: FatturaSalvata) {
+    setConfrontoErrore((prec) => ({ ...prec, [f.id]: "" }));
+    if (!f.fornitore_id) {
+      setConfrontoErrore((prec) => ({
+        ...prec,
+        [f.id]: "Questa fattura non è abbinata a un fornitore a sistema: abbinala per poter confrontare i prezzi con le bolle.",
+      }));
+      return;
+    }
+    setConfrontoInCorso((prec) => ({ ...prec, [f.id]: true }));
+    try {
+      const supabase = createClient();
+      const [{ data: prodotti, error: erroreProdotti }, { data: storico, error: erroreStorico }] =
+        await Promise.all([
+          supabase.from("prodotti").select("id, codice_articolo, descrizione").eq("fornitore_id", f.fornitore_id),
+          supabase
+            .from("storico_prezzi_fatture")
+            .select("prodotto_id, data, numero_fattura, prezzo")
+            .eq("fornitore_id", f.fornitore_id),
+        ]);
+      if (erroreProdotti || erroreStorico) {
+        setConfrontoErrore((prec) => ({
+          ...prec,
+          [f.id]: `Errore nel confronto: ${(erroreProdotti ?? erroreStorico)?.message}`,
+        }));
+        return;
+      }
+      const risultati = confrontaRighe(
+        f.righe_fatture_ricevute,
+        (prodotti ?? []) as ProdottoPerConfronto[],
+        (storico ?? []) as RigaStoricoPerConfronto[]
+      );
+      setConfrontoRisultati((prec) => ({ ...prec, [f.id]: risultati }));
+    } finally {
+      setConfrontoInCorso((prec) => ({ ...prec, [f.id]: false }));
+    }
+  }
+
   async function gestisciCaricamento(file: File) {
     setErrore(null);
     setMessaggioSalvataggio(null);
@@ -438,6 +619,7 @@ export function RegistroFattureClient({ fornitori, fattureIniziali }: Props) {
         [
           {
             id: fatturaId,
+            fornitore_id: fornitoreScelto || null,
             fornitore_nome: estratta.fornitoreNome,
             fornitore_piva: estratta.fornitorePiva,
             numero: estratta.numero,
@@ -758,6 +940,76 @@ export function RegistroFattureClient({ fornitori, fattureIniziali }: Props) {
                     ))}
                   </div>
                 )}
+
+                <div className="mt-3 border-t border-neutral-100 pt-3">
+                  <button
+                    onClick={() => confrontaConBolle(f)}
+                    disabled={confrontoInCorso[f.id]}
+                    className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                  >
+                    {confrontoInCorso[f.id] ? "Confronto in corso…" : "🔍 Confronta con le bolle"}
+                  </button>
+
+                  {confrontoErrore[f.id] && (
+                    <p className="mt-2 rounded-lg bg-red-50 p-2 text-xs text-red-700">
+                      {confrontoErrore[f.id]}
+                    </p>
+                  )}
+
+                  {confrontoRisultati[f.id] && (
+                    <div className="mt-2 space-y-1">
+                      {(() => {
+                        const risultati = confrontoRisultati[f.id];
+                        const discrepanze = risultati.filter(
+                          (r) => r.stato === "ok" && r.differenza !== null && Math.abs(r.differenza) >= 0.01
+                        );
+                        return (
+                          <p className="text-xs text-neutral-500">
+                            {discrepanze.length === 0
+                              ? "Nessuna discrepanza di prezzo trovata."
+                              : `${discrepanze.length} ${discrepanze.length === 1 ? "riga con differenza di prezzo" : "righe con differenza di prezzo"} rispetto alle bolle.`}
+                          </p>
+                        );
+                      })()}
+                      {confrontoRisultati[f.id].map((r, i) => {
+                        const haDifferenza = r.stato === "ok" && r.differenza !== null && Math.abs(r.differenza) >= 0.01;
+                        return (
+                          <div
+                            key={i}
+                            className={`rounded-md border p-2 text-xs ${
+                              haDifferenza
+                                ? "border-amber-200 bg-amber-50"
+                                : "border-neutral-100 text-neutral-500"
+                            }`}
+                          >
+                            <p className={haDifferenza ? "text-neutral-900" : undefined}>
+                              {r.riga.descrizione}
+                            </p>
+                            {r.stato === "senza-prodotto" && (
+                              <p>Nessun prodotto corrispondente trovato a sistema per questo fornitore.</p>
+                            )}
+                            {r.stato === "senza-storico" && (
+                              <p>Prodotto trovato, ma nessuna bolla registrata finora per confrontare il prezzo.</p>
+                            )}
+                            {r.stato === "ok" && (
+                              <p>
+                                Fattura {formattaEuro(r.riga.prezzo_unitario)} — bolla{" "}
+                                {formattaEuro(r.prezzoRiferimento)} del {formattaData(r.dataRiferimento)}
+                                {r.fonteRiferimento === "ddt" ? " (stesso DDT)" : " (ultimo prezzo registrato)"}
+                                {haDifferenza && (
+                                  <span className="ml-1 font-medium text-amber-800">
+                                    — differenza {r.differenza! > 0 ? "+" : ""}
+                                    {formattaEuro(r.differenza)}
+                                  </span>
+                                )}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
