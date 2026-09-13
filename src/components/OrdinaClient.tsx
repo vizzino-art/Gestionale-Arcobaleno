@@ -50,6 +50,7 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
   const [fornitoreId, setFornitoreId] = useState<string | undefined>(fornitori[0]?.id);
   const [statoSalvataggio, setStatoSalvataggio] = useState<Record<string, StatoSalvataggio>>({});
   const [copiato, setCopiato] = useState(false);
+  const [ricerca, setRicerca] = useState("");
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const coloriCategorie = useMemo(() => mappaColoriCategorie(categorie), [categorie]);
@@ -82,6 +83,21 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
         .sort((a, b) => a.ordine - b.ordine || a.descrizione.localeCompare(b.descrizione, "it")),
     [prodotti, fornitoreId]
   );
+
+  // Solo un filtro visivo per trovare subito un prodotto: l'ordine reale
+  // (frecce ▲▼), il messaggio WhatsApp e le quantità restano calcolati su
+  // TUTTI i prodotti del fornitore, ricerca attiva o no — la ricerca non
+  // esclude nulla dall'ordine, serve solo a scorrere meno per trovarlo.
+  const ricercaAttiva = ricerca.trim().length > 0;
+  const prodottiVisualizzati = useMemo(() => {
+    const q = ricerca.trim().toLowerCase();
+    if (!q) return prodottiFornitore;
+    return prodottiFornitore.filter(
+      (p) =>
+        p.descrizione.toLowerCase().includes(q) ||
+        (p.codice_articolo ?? "").toLowerCase().includes(q)
+    );
+  }, [prodottiFornitore, ricerca]);
 
   const fornitore = fornitori.find((f) => f.id === fornitoreId);
 
@@ -171,7 +187,10 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
         {fornitori.map((f) => (
           <button
             key={f.id}
-            onClick={() => setFornitoreId(f.id)}
+            onClick={() => {
+              setFornitoreId(f.id);
+              setRicerca("");
+            }}
             className={`shrink-0 rounded-md px-3 py-2.5 text-sm ${
               f.id === fornitoreId
                 ? "bg-neutral-900 text-white"
@@ -183,12 +202,32 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
         ))}
       </div>
 
+      {prodottiFornitore.length > 0 && (
+        <input
+          type="text"
+          value={ricerca}
+          onChange={(e) => setRicerca(e.target.value)}
+          placeholder="🔍 Cerca per nome o codice articolo…"
+          className="mb-3 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+        />
+      )}
+
+      {ricercaAttiva && (
+        <p className="mb-2 text-xs text-neutral-400">
+          Ricerca attiva: le frecce per riordinare sono disattivate finché non la cancelli.
+        </p>
+      )}
+
       {prodottiFornitore.length === 0 && (
         <p className="text-sm text-neutral-500">Nessun prodotto attivo per questo fornitore.</p>
       )}
 
+      {prodottiFornitore.length > 0 && prodottiVisualizzati.length === 0 && (
+        <p className="text-sm text-neutral-500">Nessun prodotto trovato per &quot;{ricerca}&quot;.</p>
+      )}
+
       <div className="space-y-2">
-        {prodottiFornitore.map((p, i) => {
+        {prodottiVisualizzati.map((p, i) => {
           const riga = calcolaOrdine(p);
           const propria = confrontoByProdotto.get(p.id);
           const migliore = p.categoria_id ? migliorPerCategoria.get(p.categoria_id) : undefined;
@@ -209,7 +248,7 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
               <div className="flex shrink-0 flex-col gap-0.5 pt-0.5">
                 <button
                   onClick={() => spostaProdotto(p.id, "su")}
-                  disabled={i === 0}
+                  disabled={ricercaAttiva || i === 0}
                   aria-label="Sposta su"
                   className="rounded px-1.5 py-1 text-neutral-400 hover:bg-white/70 hover:text-neutral-700 disabled:opacity-20"
                 >
@@ -217,7 +256,7 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
                 </button>
                 <button
                   onClick={() => spostaProdotto(p.id, "giu")}
-                  disabled={i === prodottiFornitore.length - 1}
+                  disabled={ricercaAttiva || i === prodottiFornitore.length - 1}
                   aria-label="Sposta giù"
                   className="rounded px-1.5 py-1 text-neutral-400 hover:bg-white/70 hover:text-neutral-700 disabled:opacity-20"
                 >

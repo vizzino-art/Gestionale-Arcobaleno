@@ -47,6 +47,7 @@ export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categori
   const [categorieLocali, setCategorieLocali] = useState<Categoria[]>(categorie);
   const [modaleColori, setModaleColori] = useState(false);
   const [modaleDoppioni, setModaleDoppioni] = useState(false);
+  const [ricerca, setRicerca] = useState("");
 
   const coloriCategorie = useMemo(() => mappaColoriCategorie(categorieLocali), [categorieLocali]);
 
@@ -66,6 +67,19 @@ export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categori
         ),
     [prodotti, fornitoreId]
   );
+
+  // Solo un filtro visivo sull'elenco già ordinato: non tocca l'ordine dei
+  // prodotti (le frecce ▲▼ in Ordina restano affidabili anche con una
+  // ricerca in corso lì).
+  const prodottiVisualizzati = useMemo(() => {
+    const q = ricerca.trim().toLowerCase();
+    if (!q) return prodottiFornitore;
+    return prodottiFornitore.filter(
+      (p) =>
+        p.descrizione.toLowerCase().includes(q) ||
+        (p.codice_articolo ?? "").toLowerCase().includes(q)
+    );
+  }, [prodottiFornitore, ricerca]);
 
   async function apriStorico(p: ProdottoConCategoria) {
     setModaleProdotto(p);
@@ -112,7 +126,10 @@ export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categori
         {fornitori.map((f) => (
           <button
             key={f.id}
-            onClick={() => setFornitoreId(f.id)}
+            onClick={() => {
+              setFornitoreId(f.id);
+              setRicerca("");
+            }}
             className={`shrink-0 rounded-md px-3 py-2.5 text-sm ${
               f.id === fornitoreId ? "bg-neutral-900 text-white" : "text-neutral-600 hover:bg-neutral-100"
             }`}
@@ -147,12 +164,26 @@ export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categori
         </div>
       )}
 
+      {fornitoreId && prodottiFornitore.length > 0 && (
+        <input
+          type="text"
+          value={ricerca}
+          onChange={(e) => setRicerca(e.target.value)}
+          placeholder="🔍 Cerca per nome o codice articolo…"
+          className="mb-3 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+        />
+      )}
+
       {prodottiFornitore.length === 0 && (
         <p className="text-sm text-neutral-500">Nessun prodotto per questo fornitore.</p>
       )}
 
+      {prodottiFornitore.length > 0 && prodottiVisualizzati.length === 0 && (
+        <p className="text-sm text-neutral-500">Nessun prodotto trovato per &quot;{ricerca}&quot;.</p>
+      )}
+
       <div className="space-y-2">
-        {prodottiFornitore.map((p, i) => {
+        {prodottiVisualizzati.map((p, i) => {
           const coloreCategoria = p.categoria_id ? coloriCategorie.get(p.categoria_id) : undefined;
           const colore = coloreCategoria ?? COLORI_RIGA[i % COLORI_RIGA.length];
           return (
