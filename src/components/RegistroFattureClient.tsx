@@ -108,6 +108,16 @@ function formattaData(v: string | null): string {
   return `${giorno}/${mese}/${anno}`;
 }
 
+// Più recenti prima; a parità di data, ordine alfabetico per fornitore.
+function comparaFatture(a: FatturaSalvata, b: FatturaSalvata): number {
+  if (a.data !== b.data) return a.data < b.data ? 1 : -1;
+  return a.fornitore_nome.localeCompare(b.fornitore_nome, "it");
+}
+
+function nomiFileValidi(files: FileList | File[]): File[] {
+  return Array.from(files).filter((f) => /\.(xml|p7m)$/i.test(f.name));
+}
+
 async function leggiComeBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -128,16 +138,21 @@ export function RegistroFattureClient({ fornitori, fattureIniziali }: Props) {
   const [fornitoreScelto, setFornitoreScelto] = useState<string>("");
   const [salvataggio, setSalvataggio] = useState(false);
   const [messaggioSalvataggio, setMessaggioSalvataggio] = useState<string | null>(null);
-  const [fatture, setFatture] = useState<FatturaSalvata[]>(fattureIniziali);
+  const [fatture, setFatture] = useState<FatturaSalvata[]>(() =>
+    [...fattureIniziali].sort(comparaFatture)
+  );
   const [espansa, setEspansa] = useState<string | null>(null);
+  const [listaFornitori, setListaFornitori] = useState<Fornitore[]>(fornitori);
+  const [codaFile, setCodaFile] = useState<File[]>([]);
+  const [trascinamentoAttivo, setTrascinamentoAttivo] = useState(false);
 
   const fornitoriPerPiva = useMemo(() => {
     const mappa = new Map<string, Fornitore>();
-    for (const f of fornitori) {
+    for (const f of listaFornitori) {
       if (f.piva) mappa.set(normalizzaPiva(f.piva), f);
     }
     return mappa;
-  }, [fornitori]);
+  }, [listaFornitori]);
 
   async function gestisciCaricamento(file: File) {
     setErrore(null);
@@ -165,6 +180,20 @@ export function RegistroFattureClient({ fornitori, fattureIniziali }: Props) {
     } finally {
       setCaricamento(false);
     }
+  }
+
+  function avviaFile(files: File[]) {
+    if (files.length === 0) return;
+    const [primo, ...resto] = files;
+    setCodaFile(resto);
+    gestisciCaricamento(primo);
+  }
+
+  function saltaFileCorrente() {
+    setEstratta(null);
+    setErrore(null);
+    setNomeFileCorrente("");
+    if (codaFile.length > 0) avviaFile(codaFile);
   }
 
   async function salva() {
@@ -202,6 +231,26 @@ export function RegistroFattureClient({ fornitori, fattureIniziali }: Props) {
       }
 
       const fatturaId = fatturaInserita.id as string;
+
+      // Se ho scelto un fornitore e la sua P.IVA a sistema è diversa (o
+      // mancante), la aggiorno: così le prossime fatture dello stesso
+      // fornitore si abbineranno da sole, senza doverlo scegliere ogni volta.
+      if (fornitoreScelto) {
+        const fornitoreSelezionato = listaFornitori.find((f) => f.id === fornitoreScelto);
+        const pivaEstratta = normalizzaPiva(estratta.fornitorePiva);
+        const pivaAttuale = fornitoreSelezionato?.piva ? normalizzaPiva(fornitoreSelezionato.piva) : "";
+        if (pivaEstratta && pivaEstratta !== pivaAttuale) {
+          const { error: errorePiva } = await supabase
+            .from("fornitori")
+            .update({ piva: estratta.fornitorePiva })
+            .eq("id", fornitoreScelto);
+          if (!errorePiva) {
+            setListaFornitori((prec) =>
+              prec.map((f) => (f.id === fornitoreScelto ? { ...f, piva: estratta.fornitorePiva } : f))
+            );
+          }
+        }
+      }
 
       if (estratta.righe.length > 0) {
         const { error: erroreRighe } = await supabase.from("righe_fatture_ricevute").insert(
@@ -241,37 +290,42 @@ export function RegistroFattureClient({ fornitori, fattureIniziali }: Props) {
         }
       }
 
-      setFatture((prec) => [
-        {
-          id: fatturaId,
-          fornitore_nome: estratta.fornitoreNome,
-          fornitore_piva: estratta.fornitorePiva,
-          numero: estratta.numero,
-          data: estratta.data,
-          tipo_documento: estratta.tipoDocumento,
-          importo_totale: estratta.importoTotale,
-          righe_fatture_ricevute: estratta.righe.map((r) => ({
-            numero_linea: r.numeroLinea,
-            codice_articolo: r.codiceArticolo,
-            descrizione: r.descrizione,
-            quantita: r.quantita,
-            um: r.um,
-            prezzo_unitario: r.prezzoUnitario,
-            ddt_numero: r.ddtNumero,
-            ddt_data: r.ddtData,
-          })),
-          rate_pagamento_fatture: estratta.rate.map((r) => ({
-            numero_rata: r.numeroRata,
-            importo: r.importo,
-            data_scadenza: r.dataScadenza,
-            modalita_pagamento: r.modalitaPagamento,
-          })),
-        },
-        ...prec,
-      ]);
+      setFatture((prec) =>
+        [
+          {
+            id: fatturaId,
+            fornitore_nome: estratta.fornitoreNome,
+            fornitore_piva: estratta.fornitorePiva,
+            numero: estratta.numero,
+            data: estratta.data,
+            tipo_documento: estratta.tipoDocumento,
+            importo_totale: estratta.importoTotale,
+            righe_fatture_ricevute: estratta.righe.map((r) => ({
+              numero_linea: r.numeroLinea,
+              codice_articolo: r.codiceArticolo,
+              descrizione: r.descrizione,
+              quantita: r.quantita,
+              um: r.um,
+              prezzo_unitario: r.prezzoUnitario,
+              ddt_numero: r.ddtNumero,
+              ddt_data: r.ddtData,
+            })),
+            rate_pagamento_fatture: estratta.rate.map((r) => ({
+              numero_rata: r.numeroRata,
+              importo: r.importo,
+              data_scadenza: r.dataScadenza,
+              modalita_pagamento: r.modalitaPagamento,
+            })),
+          },
+          ...prec,
+        ].sort(comparaFatture)
+      );
       setMessaggioSalvataggio("Fattura registrata.");
       setEstratta(null);
       setNomeFileCorrente("");
+      if (codaFile.length > 0) {
+        avviaFile(codaFile);
+      }
     } finally {
       setSalvataggio(false);
     }
@@ -287,23 +341,56 @@ export function RegistroFattureClient({ fornitori, fattureIniziali }: Props) {
         }
       `}</style>
 
-      <div className="mb-6 rounded-lg border border-neutral-200 bg-white p-4">
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setTrascinamentoAttivo(true);
+        }}
+        onDragLeave={() => setTrascinamentoAttivo(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setTrascinamentoAttivo(false);
+          const file = nomiFileValidi(e.dataTransfer.files);
+          if (file.length > 0) avviaFile(file);
+        }}
+        className={
+          trascinamentoAttivo
+            ? "mb-6 rounded-lg border-2 border-dashed border-neutral-900 bg-neutral-50 p-4"
+            : "mb-6 rounded-lg border border-neutral-200 bg-white p-4"
+        }
+      >
         <label className="mb-2 block text-sm font-medium text-neutral-700">
-          Carica una fattura (file .xml o .xml.p7m così come scaricato dalla PEC)
+          Trascina qui uno o più file .xml / .xml.p7m dal Finder (così come scaricati dalla PEC), oppure
+          scegli il file
         </label>
         <input
           type="file"
           accept=".xml,.p7m"
+          multiple
           disabled={caricamento}
           onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) gestisciCaricamento(file);
+            const file = nomiFileValidi(e.target.files ?? []);
+            if (file.length > 0) avviaFile(file);
             e.target.value = "";
           }}
           className="block w-full text-sm text-neutral-600 file:mr-3 file:rounded-md file:border-0 file:bg-neutral-900 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white"
         />
+        {codaFile.length > 0 && (
+          <p className="mt-2 text-sm text-neutral-500">
+            {codaFile.length} altr{codaFile.length === 1 ? "o file" : "i file"} in coda dopo questo.
+          </p>
+        )}
         {caricamento && <p className="mt-2 text-sm text-neutral-500">Lettura del file in corso…</p>}
-        {errore && <p className="mt-2 rounded-lg bg-red-50 p-3 text-sm text-red-700">{errore}</p>}
+        {errore && (
+          <div className="mt-2 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+            <p>{errore}</p>
+            {codaFile.length > 0 && (
+              <button onClick={saltaFileCorrente} className="mt-1 font-medium underline">
+                Salta questo file e passa al successivo in coda
+              </button>
+            )}
+          </div>
+        )}
         {messaggioSalvataggio && (
           <p className="mt-2 rounded-lg bg-green-50 p-3 text-sm text-green-700">{messaggioSalvataggio}</p>
         )}
@@ -336,7 +423,7 @@ export function RegistroFattureClient({ fornitori, fattureIniziali }: Props) {
                 className="mt-0.5 block w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
               >
                 <option value="">— nessuno (solo archiviata) —</option>
-                {fornitori.map((f) => (
+                {listaFornitori.map((f) => (
                   <option key={f.id} value={f.id}>
                     {f.nome}
                   </option>
