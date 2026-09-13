@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { trovaCoppieSospette, type CoppiaSospetta } from "@/lib/duplicati-prodotti";
 import type { Fornitore, Prodotto } from "@/lib/types";
@@ -18,9 +18,33 @@ function chiaveCoppia(c: CoppiaSospetta): string {
 
 export function TrovaDoppioniModal({ prodotti, fornitori, onUnito, onChiudi }: Props) {
   const [ignorate, setIgnorate] = useState<Set<string>>(new Set());
+  const [caricandoIgnorate, setCaricandoIgnorate] = useState(true);
   const [confermaCoppia, setConfermaCoppia] = useState<string | null>(null);
   const [unendo, setUnendo] = useState(false);
   const [errore, setErrore] = useState<string | null>(null);
+
+  // Le coppie che Mauro ha già marcato "mantieni entrambi" non devono
+  // ripresentarsi ogni volta che riapre lo strumento: le carichiamo una
+  // volta all'apertura, salvate a sistema in prodotti_doppioni_ignorati.
+  useEffect(() => {
+    let annullato = false;
+    const supabase = createClient();
+    supabase
+      .from("prodotti_doppioni_ignorati")
+      .select("prodotto_id_a, prodotto_id_b")
+      .then(({ data, error }) => {
+        if (annullato) return;
+        if (error) {
+          setErrore(`Errore nel caricamento delle coppie ignorate: ${error.message}`);
+        } else if (data) {
+          setIgnorate(new Set(data.map((r) => `${r.prodotto_id_a}-${r.prodotto_id_b}`)));
+        }
+        setCaricandoIgnorate(false);
+      });
+    return () => {
+      annullato = true;
+    };
+  }, []);
 
   const nomeFornitore = useMemo(() => {
     const mappa = new Map(fornitori.map((f) => [f.id, f.nome]));
@@ -32,9 +56,19 @@ export function TrovaDoppioniModal({ prodotti, fornitori, onUnito, onChiudi }: P
     [prodotti, ignorate]
   );
 
-  function ignora(c: CoppiaSospetta) {
-    setIgnorate((prev) => new Set(prev).add(chiaveCoppia(c)));
+  async function mantieniEntrambi(c: CoppiaSospetta) {
+    const chiave = chiaveCoppia(c);
+    setIgnorate((prev) => new Set(prev).add(chiave));
     setConfermaCoppia(null);
+    const [idA, idB] = c.a.id < c.b.id ? [c.a.id, c.b.id] : [c.b.id, c.a.id];
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("prodotti_doppioni_ignorati")
+      .insert({ prodotto_id_a: idA, prodotto_id_b: idB });
+    // 23505 = coppia già salvata in precedenza: non è un errore da mostrare.
+    if (error && error.code !== "23505") {
+      setErrore(`Errore nel salvataggio: ${error.message}`);
+    }
   }
 
   async function unisci(tenuto: Prodotto, eliminato: Prodotto) {
@@ -69,7 +103,8 @@ export function TrovaDoppioniModal({ prodotti, fornitori, onUnito, onChiudi }: P
               Coppie di prodotti dello stesso fornitore con nome molto simile: probabilmente lo
               stesso prodotto inserito due volte. Unendoli, lo storico prezzi e ordini del
               prodotto eliminato passa a quello tenuto — non si perde nulla. Se una coppia non è
-              in realtà un doppione (es. due formati diversi), usa &quot;Non è un doppione&quot;.
+              in realtà un doppione (es. due formati diversi), usa &quot;Mantieni entrambi&quot;:
+              non te la riproporrà più.
             </p>
           </div>
           <button onClick={onChiudi} className="shrink-0 text-neutral-400 hover:text-neutral-700">
@@ -79,12 +114,14 @@ export function TrovaDoppioniModal({ prodotti, fornitori, onUnito, onChiudi }: P
 
         {errore && <p className="mb-3 rounded-md bg-red-50 p-2 text-xs text-red-700">{errore}</p>}
 
-        {coppie.length === 0 && (
+        {caricandoIgnorate && <p className="text-sm text-neutral-500">Caricamento…</p>}
+
+        {!caricandoIgnorate && coppie.length === 0 && (
           <p className="text-sm text-neutral-500">Nessuna coppia sospetta trovata.</p>
         )}
 
         <div className="space-y-3">
-          {coppie.map((c) => {
+          {!caricandoIgnorate && coppie.map((c) => {
             const chiave = chiaveCoppia(c);
             return (
               <div key={chiave} className="rounded-lg border border-neutral-200 p-3">
@@ -144,10 +181,10 @@ export function TrovaDoppioniModal({ prodotti, fornitori, onUnito, onChiudi }: P
                 </div>
 
                 <button
-                  onClick={() => ignora(c)}
+                  onClick={() => mantieniEntrambi(c)}
                   className="mt-2 text-xs text-neutral-400 hover:text-neutral-600"
                 >
-                  Non è un doppione, ignora
+                  Mantieni entrambi (non è un doppione)
                 </button>
               </div>
             );
