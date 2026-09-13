@@ -476,7 +476,7 @@ export function RegistroFattureClient({ fornitori, fattureIniziali }: Props) {
             </div>
           )}
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={salva}
               disabled={salvataggio}
@@ -484,7 +484,21 @@ export function RegistroFattureClient({ fornitori, fattureIniziali }: Props) {
             >
               {salvataggio ? "Salvataggio…" : "Salva nel Registro Fatture"}
             </button>
+            <button
+              onClick={saltaFileCorrente}
+              disabled={salvataggio}
+              className="rounded-md border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+              title="Non salva questa fattura e passa al file successivo (se ce n'è uno in coda)"
+            >
+              Scarta (non salvare)
+            </button>
           </div>
+          <p className="mt-2 text-xs text-neutral-500">
+            Se non ti interessa registrarla (es. non è una fattura fornitore alimentare) o non trovi il
+            fornitore giusto, puoi scartarla: non viene salvata da nessuna parte. Per archiviarla comunque
+            senza collegarla a un fornitore, lascia &quot;— nessuno (solo archiviata) —&quot; nella tendina e premi
+            Salva.
+          </p>
         </div>
       )}
 
