@@ -16,6 +16,10 @@ export type Fornitore = {
 export type Categoria = {
   id: string;
   nome: string;
+  // Colore scelto da Mauro per le righe di questa categoria in
+  // Pannello/Ordina/Riepilogo (classe Tailwind, es. "bg-amber-100");
+  // null = nessun colore scelto, si usa l'alternanza automatica.
+  colore: string | null;
 };
 
 export type Prodotto = {
