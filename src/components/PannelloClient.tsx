@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { ModificaProdottoModal } from "./ModificaProdottoModal";
 import { ColoriCategorieModal } from "./ColoriCategorieModal";
+import { TrovaDoppioniModal } from "./TrovaDoppioniModal";
 import { mappaColoriCategorie } from "@/lib/colori-categorie";
 import type { Categoria, Fornitore, Prodotto } from "@/lib/types";
 
@@ -45,6 +46,7 @@ export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categori
   >(null);
   const [categorieLocali, setCategorieLocali] = useState<Categoria[]>(categorie);
   const [modaleColori, setModaleColori] = useState(false);
+  const [modaleDoppioni, setModaleDoppioni] = useState(false);
 
   const coloriCategorie = useMemo(() => mappaColoriCategorie(categorieLocali), [categorieLocali]);
 
@@ -92,6 +94,18 @@ export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categori
     setModaleModifica(null);
   }
 
+  function prodottiUniti(idTenuto: string, idEliminato: string, codiceArticoloAggiornato: string | null) {
+    setProdotti((prev) =>
+      prev
+        .filter((p) => p.id !== idEliminato)
+        .map((p) =>
+          p.id === idTenuto && codiceArticoloAggiornato
+            ? { ...p, codice_articolo: codiceArticoloAggiornato }
+            : p
+        )
+    );
+  }
+
   return (
     <div>
       <div className="mb-3 flex gap-1 overflow-x-auto border-b border-neutral-200 pb-2">
@@ -109,13 +123,21 @@ export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categori
       </div>
 
       {fornitoreId && (
-        <div className="mb-3 flex justify-between gap-2">
-          <button
-            onClick={() => setModaleColori(true)}
-            className="shrink-0 rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
-          >
-            🎨 Colori categorie
-          </button>
+        <div className="mb-3 flex flex-wrap justify-between gap-2">
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setModaleColori(true)}
+              className="shrink-0 rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+            >
+              🎨 Colori categorie
+            </button>
+            <button
+              onClick={() => setModaleDoppioni(true)}
+              className="shrink-0 rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+            >
+              🔀 Prodotti doppi
+            </button>
+          </div>
           <button
             onClick={() => setModaleModifica({ modo: "nuovo" })}
             className="shrink-0 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700"
@@ -248,6 +270,15 @@ export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categori
             setCategorieLocali((prec) => prec.map((x) => (x.id === c.id ? c : x)))
           }
           onChiudi={() => setModaleColori(false)}
+        />
+      )}
+
+      {modaleDoppioni && (
+        <TrovaDoppioniModal
+          prodotti={prodotti}
+          fornitori={fornitori}
+          onUnito={prodottiUniti}
+          onChiudi={() => setModaleDoppioni(false)}
         />
       )}
     </div>

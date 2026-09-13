@@ -58,14 +58,30 @@ function normalizza(s: string): string {
 // un prodotto a sistema: 1 se identiche, altrimenti frazione di parole (>2
 // lettere) della riga estratta che compaiono anche nella descrizione a
 // sistema.
+// Bidirezionale: una bolla può riportare un nome più corto o più lungo di
+// quello già a sistema (es. "Stracchino" sulla bolla contro "Stracchino
+// COMALAT gr. 1000" già salvato, o viceversa). Guardando solo "quante
+// parole della riga compaiono nel prodotto" questi due casi non sono
+// equivalenti: uno dei due versi resta sempre sotto soglia e il prodotto
+// non viene riconosciuto, creandone poi uno doppio. Prendendo il maggiore
+// tra i due versi si riconoscono entrambi i casi.
 function punteggioDescrizione(descRigaNormalizzata: string, prodotto: Prodotto): number {
   const descP = normalizza(prodotto.descrizione);
   if (descP === descRigaNormalizzata) return 1;
-  const parole = descRigaNormalizzata.split(" ").filter((w) => w.length > 2);
-  if (parole.length === 0) return 0;
-  const paroleP = new Set(descP.split(" "));
-  const comuni = parole.filter((w) => paroleP.has(w)).length;
-  return comuni / parole.length;
+
+  const paroleRiga = descRigaNormalizzata.split(" ").filter((w) => w.length > 2);
+  const paroleProdotto = descP.split(" ").filter((w) => w.length > 2);
+  const insiemeRiga = new Set(descRigaNormalizzata.split(" "));
+  const insiemeProdotto = new Set(descP.split(" "));
+
+  const versoRigaProdotto = paroleRiga.length
+    ? paroleRiga.filter((w) => insiemeProdotto.has(w)).length / paroleRiga.length
+    : 0;
+  const versoProdottoRiga = paroleProdotto.length
+    ? paroleProdotto.filter((w) => insiemeRiga.has(w)).length / paroleProdotto.length
+    : 0;
+
+  return Math.max(versoRigaProdotto, versoProdottoRiga);
 }
 
 // Abbinamento automatico — sempre e comunque modificabile a mano dopo, non è
