@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { OrdinaClient } from "@/components/OrdinaClient";
 import type {
+  Categoria,
   ConfrontoCategoria,
   Fornitore,
   Prodotto,
@@ -10,18 +11,24 @@ import type {
 export default async function OrdinaPage() {
   const supabase = await createClient();
 
-  const [{ data: fornitori, error: erroreFornitori }, { data: prodotti, error: erroreProdotti }, { data: confronto }, { data: storico }] =
-    await Promise.all([
-      supabase.from("fornitori").select("*").order("nome", { ascending: true }),
-      supabase
-        .from("prodotti")
-        .select("*")
-        .eq("attivo", true)
-        .order("fornitore_id", { ascending: true })
-        .order("ordine", { ascending: true }),
-      supabase.from("v_confronto_categorie").select("*"),
-      supabase.from("v_storico_prodotto").select("*"),
-    ]);
+  const [
+    { data: fornitori, error: erroreFornitori },
+    { data: prodotti, error: erroreProdotti },
+    { data: confronto },
+    { data: storico },
+    { data: categorie },
+  ] = await Promise.all([
+    supabase.from("fornitori").select("*").order("nome", { ascending: true }),
+    supabase
+      .from("prodotti")
+      .select("*")
+      .eq("attivo", true)
+      .order("fornitore_id", { ascending: true })
+      .order("ordine", { ascending: true }),
+    supabase.from("v_confronto_categorie").select("*"),
+    supabase.from("v_storico_prodotto").select("*"),
+    supabase.from("categorie").select("*"),
+  ]);
 
   const errore = erroreFornitori || erroreProdotti;
 
@@ -41,6 +48,7 @@ export default async function OrdinaPage() {
           prodottiIniziali={(prodotti ?? []) as Prodotto[]}
           confronto={(confronto ?? []) as ConfrontoCategoria[]}
           storico={(storico ?? []) as StoricoProdotto[]}
+          categorie={(categorie ?? []) as Categoria[]}
         />
       )}
     </div>
