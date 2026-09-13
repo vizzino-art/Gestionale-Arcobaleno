@@ -1,20 +1,24 @@
 import { createClient } from "@/lib/supabase/server";
 import { RiepilogoClient } from "@/components/RiepilogoClient";
-import type { Fornitore, Prodotto } from "@/lib/types";
+import type { Categoria, Fornitore, Prodotto } from "@/lib/types";
 
 export default async function RiepilogoPage() {
   const supabase = await createClient();
 
-  const [{ data: fornitori, error: erroreFornitori }, { data: prodotti, error: erroreProdotti }] =
-    await Promise.all([
-      supabase.from("fornitori").select("*").order("nome", { ascending: true }),
-      supabase
-        .from("prodotti")
-        .select("*")
-        .eq("attivo", true)
-        .order("fornitore_id", { ascending: true })
-        .order("ordine", { ascending: true }),
-    ]);
+  const [
+    { data: fornitori, error: erroreFornitori },
+    { data: prodotti, error: erroreProdotti },
+    { data: categorie },
+  ] = await Promise.all([
+    supabase.from("fornitori").select("*").order("nome", { ascending: true }),
+    supabase
+      .from("prodotti")
+      .select("*")
+      .eq("attivo", true)
+      .order("fornitore_id", { ascending: true })
+      .order("ordine", { ascending: true }),
+    supabase.from("categorie").select("*"),
+  ]);
 
   const errore = erroreFornitori || erroreProdotti;
 
@@ -36,6 +40,7 @@ export default async function RiepilogoPage() {
         <RiepilogoClient
           fornitori={(fornitori ?? []) as Fornitore[]}
           prodotti={(prodotti ?? []) as Prodotto[]}
+          categorie={(categorie ?? []) as Categoria[]}
         />
       )}
     </div>
