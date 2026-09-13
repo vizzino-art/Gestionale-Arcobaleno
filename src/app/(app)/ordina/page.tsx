@@ -1,10 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
 import { OrdinaClient } from "@/components/OrdinaClient";
+import type { ProdottoConCategoria } from "@/components/PannelloClient";
 import type {
   Categoria,
   ConfrontoCategoria,
   Fornitore,
-  Prodotto,
   StoricoProdotto,
 } from "@/lib/types";
 
@@ -45,7 +45,7 @@ export default async function OrdinaPage() {
       {!errore && (
         <OrdinaClient
           fornitori={(fornitori ?? []) as Fornitore[]}
-          prodottiIniziali={(prodotti ?? []) as Prodotto[]}
+          prodottiIniziali={(prodotti ?? []) as ProdottoConCategoria[]}
           confronto={(confronto ?? []) as ConfrontoCategoria[]}
           storico={(storico ?? []) as StoricoProdotto[]}
           categorie={(categorie ?? []) as Categoria[]}
