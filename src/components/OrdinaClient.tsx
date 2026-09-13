@@ -11,17 +11,18 @@ import {
   unitaMagazzino,
 } from "@/lib/ordina";
 import { mappaColoriCategorie } from "@/lib/colori-categorie";
+import { ModificaProdottoModal } from "./ModificaProdottoModal";
+import type { ProdottoConCategoria } from "./PannelloClient";
 import type {
   Categoria,
   ConfrontoCategoria,
   Fornitore,
-  Prodotto,
   StoricoProdotto,
 } from "@/lib/types";
 
 type Props = {
   fornitori: Fornitore[];
-  prodottiIniziali: Prodotto[];
+  prodottiIniziali: ProdottoConCategoria[];
   confronto: ConfrontoCategoria[];
   storico: StoricoProdotto[];
   categorie: Categoria[];
@@ -46,11 +47,12 @@ const COLORI_RIGA = [
 
 export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, categorie }: Props) {
   const supabase = useMemo(() => createClient(), []);
-  const [prodotti, setProdotti] = useState<Prodotto[]>(prodottiIniziali);
+  const [prodotti, setProdotti] = useState<ProdottoConCategoria[]>(prodottiIniziali);
   const [fornitoreId, setFornitoreId] = useState<string | undefined>(fornitori[0]?.id);
   const [statoSalvataggio, setStatoSalvataggio] = useState<Record<string, StatoSalvataggio>>({});
   const [copiato, setCopiato] = useState(false);
   const [ricerca, setRicerca] = useState("");
+  const [modaleModifica, setModaleModifica] = useState<ProdottoConCategoria | null>(null);
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const coloriCategorie = useMemo(() => mappaColoriCategorie(categorie), [categorie]);
@@ -135,7 +137,7 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
   // aggiorna spesso): per evitare modifiche accidentali toccandolo per
   // sbaglio, prima chiede conferma e solo poi apre il popup per il nuovo
   // valore, invece di essere un campo sempre pronto a scrivere come Magazzino.
-  function modificaObiettivo(p: Prodotto) {
+  function modificaObiettivo(p: ProdottoConCategoria) {
     const unita = unitaMagazzino(p);
     const vuoleModificare = window.confirm(
       `Obiettivo attuale di "${p.descrizione}": ${p.quantita_obiettivo ?? "—"} ${unita}.\n\nVuoi modificarlo?`
@@ -173,6 +175,30 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
       supabase.from("prodotti").update({ ordine: ordineB }).eq("id", a.id),
       supabase.from("prodotti").update({ ordine: ordineA }).eq("id", b.id),
     ]);
+  }
+
+  // Sposta il prodotto oltre l'ultimo della lista del fornitore corrente —
+  // persistito come le frecce ▲▼ (resta così anche ricaricando la pagina),
+  // per togliersi dagli occhi durante l'ordine ciò che si è già controllato,
+  // senza dover scorrere uno per uno con le frecce fino in fondo.
+  async function mandaInFondo(prodottoId: string) {
+    const massimo = prodottiFornitore.reduce((m, p) => Math.max(m, p.ordine), 0);
+    const nuovoOrdine = massimo + 1;
+
+    setProdotti((prev) =>
+      prev.map((p) => (p.id === prodottoId ? { ...p, ordine: nuovoOrdine } : p))
+    );
+
+    await supabase.from("prodotti").update({ ordine: nuovoOrdine }).eq("id", prodottoId);
+  }
+
+  function prodottoSalvato(p: ProdottoConCategoria) {
+    setProdotti((prev) =>
+      // Se la modifica ha disattivato il prodotto, sparisce subito
+      // dall'ordine in corso (qui vengono mostrati solo i prodotti attivi).
+      p.attivo ? prev.map((x) => (x.id === p.id ? p : x)) : prev.filter((x) => x.id !== p.id)
+    );
+    setModaleModifica(null);
   }
 
   async function copiaMessaggio() {
@@ -280,11 +306,27 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
               <div className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-2">
                   <p className="text-sm font-medium text-neutral-900">{p.descrizione}</p>
-                  {stato && (
-                    <span className="shrink-0 text-[10px] text-neutral-400">
-                      {stato === "salvando" ? "salvataggio…" : "✓ salvato"}
-                    </span>
-                  )}
+                  <div className="flex shrink-0 items-center gap-1">
+                    {stato && (
+                      <span className="text-[10px] text-neutral-400">
+                        {stato === "salvando" ? "salvataggio…" : "✓ salvato"}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => setModaleModifica(p)}
+                      title="Modifica prodotto"
+                      className="rounded-md bg-white/70 px-1.5 py-1 text-xs hover:bg-white"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      onClick={() => mandaInFondo(p.id)}
+                      title="Manda in fondo alla lista (finché non lo sposti tu)"
+                      className="rounded-md bg-white/70 px-1.5 py-1 text-xs hover:bg-white"
+                    >
+                      ⬇
+                    </button>
+                  </div>
                 </div>
 
                 {riga && (
@@ -366,6 +408,17 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
             )}
           </div>
         </div>
+      )}
+
+      {modaleModifica && fornitoreId && (
+        <ModificaProdottoModal
+          fornitoreId={fornitoreId}
+          categorie={categorie}
+          prodotto={modaleModifica}
+          prodottiFornitore={prodottiFornitore}
+          onSalvato={prodottoSalvato}
+          onChiudi={() => setModaleModifica(null)}
+        />
       )}
     </div>
   );
