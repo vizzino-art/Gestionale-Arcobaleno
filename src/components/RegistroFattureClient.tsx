@@ -65,11 +65,22 @@ type RigaSalvata = {
 };
 
 type RataSalvata = {
+  id: string;
   numero_rata: number;
   importo: number;
   data_scadenza: string | null;
   modalita_pagamento: string | null;
+  // Passo B: quando/come Mauro ha pagato davvero questa rata — distinto
+  // dalla scadenza e dalla modalità scritte in fattura, perché spesso paga
+  // prima della scadenza e con un metodo diverso da quello dichiarato.
+  data_pagamento_effettivo: string | null;
+  metodo_pagamento_effettivo: string | null;
 };
+
+// Metodi proposti nella tendina; "Altro" apre un campo libero, così Mauro
+// può sempre registrare un metodo nuovo senza dover aspettare che venga
+// aggiunto qui.
+const METODI_PAGAMENTO_PRESET = ["Carta di credito", "SumUp", "Bonifico", "Contanti"];
 
 const ETICHETTE_MODALITA_PAGAMENTO: Record<string, string> = {
   MP01: "Contanti",
@@ -130,6 +141,98 @@ async function leggiComeBase64(file: File): Promise<string> {
   });
 }
 
+// Mini-form per registrare data e metodo di pagamento effettivo di una
+// singola rata — riusato sia dentro ogni fattura sia nella vista d'insieme
+// "Scadenze da pagare". Sta sempre fuori dalla zona stampabile
+// (#vista-stampa-fattura), quindi non compare mai nel PDF.
+function FormPagamentoRata({
+  rata,
+  onSalvata,
+}: {
+  rata: RataSalvata;
+  onSalvata: (rata: RataSalvata) => void;
+}) {
+  const presetIniziale =
+    rata.metodo_pagamento_effettivo && METODI_PAGAMENTO_PRESET.includes(rata.metodo_pagamento_effettivo)
+      ? rata.metodo_pagamento_effettivo
+      : rata.metodo_pagamento_effettivo
+        ? "Altro"
+        : "";
+  const [data, setData] = useState(rata.data_pagamento_effettivo ?? "");
+  const [metodo, setMetodo] = useState(presetIniziale);
+  const [metodoAltro, setMetodoAltro] = useState(
+    presetIniziale === "Altro" ? (rata.metodo_pagamento_effettivo ?? "") : ""
+  );
+  const [salvando, setSalvando] = useState(false);
+  const [errore, setErrore] = useState<string | null>(null);
+
+  async function salva() {
+    setSalvando(true);
+    setErrore(null);
+    const supabase = createClient();
+    const metodoFinale = metodo === "Altro" ? metodoAltro.trim() || null : metodo || null;
+    const { data: aggiornata, error } = await supabase
+      .from("rate_pagamento_fatture")
+      .update({
+        data_pagamento_effettivo: data || null,
+        metodo_pagamento_effettivo: metodoFinale,
+      })
+      .eq("id", rata.id)
+      .select("*")
+      .single();
+    setSalvando(false);
+    if (error || !aggiornata) {
+      setErrore(error?.message ?? "Errore nel salvataggio.");
+      return;
+    }
+    onSalvata(aggiornata as RataSalvata);
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {rata.data_pagamento_effettivo && (
+        <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-800">✅ Pagata</span>
+      )}
+      <input
+        type="date"
+        value={data}
+        onChange={(e) => setData(e.target.value)}
+        className="rounded-md border border-neutral-300 px-1.5 py-1 text-xs"
+      />
+      <select
+        value={metodo}
+        onChange={(e) => setMetodo(e.target.value)}
+        className="rounded-md border border-neutral-300 px-1.5 py-1 text-xs"
+      >
+        <option value="">— metodo —</option>
+        {METODI_PAGAMENTO_PRESET.map((m) => (
+          <option key={m} value={m}>
+            {m}
+          </option>
+        ))}
+        <option value="Altro">Altro…</option>
+      </select>
+      {metodo === "Altro" && (
+        <input
+          type="text"
+          value={metodoAltro}
+          onChange={(e) => setMetodoAltro(e.target.value)}
+          placeholder="Specifica metodo"
+          className="rounded-md border border-neutral-300 px-1.5 py-1 text-xs"
+        />
+      )}
+      <button
+        onClick={salva}
+        disabled={salvando}
+        className="rounded-md bg-neutral-900 px-2 py-1 text-xs text-white disabled:opacity-50"
+      >
+        {salvando ? "…" : "Salva"}
+      </button>
+      {errore && <span className="text-xs text-red-600">{errore}</span>}
+    </div>
+  );
+}
+
 export function RegistroFattureClient({ fornitori, fattureIniziali }: Props) {
   const [caricamento, setCaricamento] = useState(false);
   const [errore, setErrore] = useState<string | null>(null);
@@ -153,6 +256,39 @@ export function RegistroFattureClient({ fornitori, fattureIniziali }: Props) {
     }
     return mappa;
   }, [listaFornitori]);
+
+  // Passo B — vista d'insieme: tutte le rate non ancora pagate di tutte le
+  // fatture, più recenti scadenze prima (quelle senza scadenza in fondo).
+  // Calcolata dalle fatture già in stato, nessuna query separata.
+  const rateNonPagate = useMemo(() => {
+    const elenco: (RataSalvata & { fatturaId: string; fornitoreNome: string; numeroFattura: string })[] =
+      [];
+    for (const f of fatture) {
+      for (const r of f.rate_pagamento_fatture) {
+        if (!r.data_pagamento_effettivo) {
+          elenco.push({ ...r, fatturaId: f.id, fornitoreNome: f.fornitore_nome, numeroFattura: f.numero });
+        }
+      }
+    }
+    elenco.sort((a, b) => {
+      if (a.data_scadenza === b.data_scadenza) return 0;
+      if (!a.data_scadenza) return 1;
+      if (!b.data_scadenza) return -1;
+      return a.data_scadenza < b.data_scadenza ? -1 : 1;
+    });
+    return elenco;
+  }, [fatture]);
+
+  const oggiIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+
+  function rataAggiornata(rata: RataSalvata) {
+    setFatture((prec) =>
+      prec.map((f) => ({
+        ...f,
+        rate_pagamento_fatture: f.rate_pagamento_fatture.map((r) => (r.id === rata.id ? rata : r)),
+      }))
+    );
+  }
 
   async function gestisciCaricamento(file: File) {
     setErrore(null);
@@ -274,20 +410,28 @@ export function RegistroFattureClient({ fornitori, fattureIniziali }: Props) {
         }
       }
 
+      // Catturiamo le righe inserite (con l'id assegnato da Supabase): serve
+      // per poter registrare subito il pagamento di una rata appena salvata,
+      // senza dover prima ricaricare la pagina.
+      let rateSalvate: RataSalvata[] = [];
       if (estratta.rate.length > 0) {
-        const { error: erroreRate } = await supabase.from("rate_pagamento_fatture").insert(
-          estratta.rate.map((r) => ({
-            fattura_id: fatturaId,
-            numero_rata: r.numeroRata,
-            importo: r.importo,
-            data_scadenza: r.dataScadenza,
-            modalita_pagamento: r.modalitaPagamento,
-          }))
-        );
+        const { data: rateInserite, error: erroreRate } = await supabase
+          .from("rate_pagamento_fatture")
+          .insert(
+            estratta.rate.map((r) => ({
+              fattura_id: fatturaId,
+              numero_rata: r.numeroRata,
+              importo: r.importo,
+              data_scadenza: r.dataScadenza,
+              modalita_pagamento: r.modalitaPagamento,
+            }))
+          )
+          .select("*");
         if (erroreRate) {
           setErrore(`Fattura salvata, ma errore nelle rate: ${erroreRate.message}`);
           return;
         }
+        rateSalvate = (rateInserite ?? []) as RataSalvata[];
       }
 
       setFatture((prec) =>
@@ -310,12 +454,7 @@ export function RegistroFattureClient({ fornitori, fattureIniziali }: Props) {
               ddt_numero: r.ddtNumero,
               ddt_data: r.ddtData,
             })),
-            rate_pagamento_fatture: estratta.rate.map((r) => ({
-              numero_rata: r.numeroRata,
-              importo: r.importo,
-              data_scadenza: r.dataScadenza,
-              modalita_pagamento: r.modalitaPagamento,
-            })),
+            rate_pagamento_fatture: rateSalvate,
           },
           ...prec,
         ].sort(comparaFatture)
@@ -340,6 +479,32 @@ export function RegistroFattureClient({ fornitori, fattureIniziali }: Props) {
           #vista-stampa-fattura { position: absolute; left: 0; top: 0; width: 100%; padding: 0; }
         }
       `}</style>
+
+      <div className="mb-6 rounded-lg border border-neutral-200 bg-white p-4">
+        <h2 className="mb-3 text-base font-semibold text-neutral-900">📅 Scadenze da pagare</h2>
+        {rateNonPagate.length === 0 && (
+          <p className="text-sm text-neutral-500">Nessuna rata in sospeso: tutto pagato.</p>
+        )}
+        <div className="space-y-2">
+          {rateNonPagate.map((r) => {
+            const scaduta = r.data_scadenza ? r.data_scadenza < oggiIso : false;
+            return (
+              <div key={r.id} className="rounded-md border border-neutral-100 p-2">
+                <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-sm">
+                  <span className="text-neutral-900">
+                    <span className="font-medium">{r.fornitoreNome}</span> — fattura {r.numeroFattura}
+                  </span>
+                  <span className={scaduta ? "font-medium text-red-600" : "font-medium text-neutral-900"}>
+                    {formattaEuro(r.importo)} — scadenza {formattaData(r.data_scadenza)}
+                    {scaduta && " (scaduta)"}
+                  </span>
+                </div>
+                <FormPagamentoRata rata={r} onSalvata={rataAggiornata} />
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
       <div
         onDragOver={(e) => {
@@ -560,6 +725,13 @@ export function RegistroFattureClient({ fornitori, fattureIniziali }: Props) {
                           {formattaEuro(r.importo)} — scadenza {formattaData(r.data_scadenza)}
                           {r.modalita_pagamento &&
                             ` — ${ETICHETTE_MODALITA_PAGAMENTO[r.modalita_pagamento] ?? r.modalita_pagamento}`}
+                          {r.data_pagamento_effettivo && (
+                            <span className="text-green-700">
+                              {" "}
+                              — pagata il {formattaData(r.data_pagamento_effettivo)}
+                              {r.metodo_pagamento_effettivo && ` (${r.metodo_pagamento_effettivo})`}
+                            </span>
+                          )}
                         </li>
                       ))}
                     </ul>
@@ -571,6 +743,21 @@ export function RegistroFattureClient({ fornitori, fattureIniziali }: Props) {
                 >
                   Stampa / Salva come PDF
                 </button>
+
+                {f.rate_pagamento_fatture.length > 0 && (
+                  <div className="mt-3 space-y-2 border-t border-neutral-100 pt-3">
+                    <p className="text-xs font-medium text-neutral-500">Registra pagamento rate</p>
+                    {f.rate_pagamento_fatture.map((r) => (
+                      <div key={r.id} className="flex flex-wrap items-center gap-2">
+                        <span className="w-44 shrink-0 text-xs text-neutral-600">
+                          Rata {r.numero_rata} — {formattaEuro(r.importo)} (scad.{" "}
+                          {formattaData(r.data_scadenza)})
+                        </span>
+                        <FormPagamentoRata rata={r} onSalvata={rataAggiornata} />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
