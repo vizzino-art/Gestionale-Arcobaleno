@@ -10,7 +10,9 @@ import {
   prossimaConsegna,
   unitaMagazzino,
 } from "@/lib/ordina";
+import { mappaColoriCategorie } from "@/lib/colori-categorie";
 import type {
+  Categoria,
   ConfrontoCategoria,
   Fornitore,
   Prodotto,
@@ -22,6 +24,7 @@ type Props = {
   prodottiIniziali: Prodotto[];
   confronto: ConfrontoCategoria[];
   storico: StoricoProdotto[];
+  categorie: Categoria[];
 };
 
 type StatoSalvataggio = "salvando" | "salvato" | null;
@@ -41,13 +44,15 @@ const COLORI_RIGA = [
   "bg-violet-100",
 ];
 
-export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico }: Props) {
+export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, categorie }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const [prodotti, setProdotti] = useState<Prodotto[]>(prodottiIniziali);
   const [fornitoreId, setFornitoreId] = useState<string | undefined>(fornitori[0]?.id);
   const [statoSalvataggio, setStatoSalvataggio] = useState<Record<string, StatoSalvataggio>>({});
   const [copiato, setCopiato] = useState(false);
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  const coloriCategorie = useMemo(() => mappaColoriCategorie(categorie), [categorie]);
 
   const confrontoByProdotto = useMemo(() => {
     const m = new Map<string, ConfrontoCategoria>();
@@ -192,7 +197,8 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico }
           const conviene = propria && propria.posizione === 1;
           const st = storicoByProdotto.get(p.id);
           const stato = statoSalvataggio[p.id];
-          const colore = COLORI_RIGA[i % COLORI_RIGA.length];
+          const coloreCategoria = p.categoria_id ? coloriCategorie.get(p.categoria_id) : undefined;
+          const colore = coloreCategoria ?? COLORI_RIGA[i % COLORI_RIGA.length];
           const unita = unitaMagazzino(p);
 
           return (

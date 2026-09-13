@@ -8,19 +8,33 @@ import {
   linkWhatsApp,
   prossimaConsegna,
 } from "@/lib/ordina";
-import type { Fornitore, Prodotto } from "@/lib/types";
+import { mappaColoriCategorie } from "@/lib/colori-categorie";
+import type { Categoria, Fornitore, Prodotto } from "@/lib/types";
+
+// Stessa tavolozza tenue usata in Ordina/Pannello, per coerenza visiva tra
+// le pagine — ripiego per le categorie senza un colore scelto da Mauro.
+const COLORI_RIGA = [
+  "bg-red-100",
+  "bg-orange-100",
+  "bg-amber-100",
+  "bg-lime-100",
+  "bg-sky-100",
+  "bg-violet-100",
+];
 
 type Props = {
   fornitori: Fornitore[];
   prodotti: Prodotto[];
+  categorie: Categoria[];
 };
 
 function arrotonda(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-export function RiepilogoClient({ fornitori, prodotti }: Props) {
+export function RiepilogoClient({ fornitori, prodotti, categorie }: Props) {
   const [copiatoId, setCopiatoId] = useState<string | null>(null);
+  const coloriCategorie = useMemo(() => mappaColoriCategorie(categorie), [categorie]);
 
   const riepilogoPerFornitore = useMemo(() => {
     return fornitori
@@ -85,18 +99,27 @@ export function RiepilogoClient({ fornitori, prodotti }: Props) {
                 )}
               </div>
             </div>
-            <div className="divide-y divide-neutral-100 text-sm">
-              {righe.map((r) => (
-                <div key={r.prodotto.id} className="flex items-center justify-between py-1.5">
-                  <span className="text-neutral-700">{r.prodotto.descrizione}</span>
-                  <span className="font-medium text-neutral-900">
-                    {arrotonda(r.quantitaOrdine)} {r.unitaMostrata}
-                    {r.quantitaOmaggio > 0 && (
-                      <span className="text-green-700"> (+{arrotonda(r.quantitaOmaggio)} omaggio)</span>
-                    )}
-                  </span>
-                </div>
-              ))}
+            <div className="space-y-1 text-sm">
+              {righe.map((r, i) => {
+                const coloreCategoria = r.prodotto.categoria_id
+                  ? coloriCategorie.get(r.prodotto.categoria_id)
+                  : undefined;
+                const colore = coloreCategoria ?? COLORI_RIGA[i % COLORI_RIGA.length];
+                return (
+                  <div
+                    key={r.prodotto.id}
+                    className={`flex items-center justify-between rounded-md px-2 py-1.5 ${colore}`}
+                  >
+                    <span className="text-neutral-700">{r.prodotto.descrizione}</span>
+                    <span className="font-medium text-neutral-900">
+                      {arrotonda(r.quantitaOrdine)} {r.unitaMostrata}
+                      {r.quantitaOmaggio > 0 && (
+                        <span className="text-green-700"> (+{arrotonda(r.quantitaOmaggio)} omaggio)</span>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         );

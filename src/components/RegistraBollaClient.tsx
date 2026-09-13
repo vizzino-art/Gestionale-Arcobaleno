@@ -385,7 +385,7 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
               const { data: nuovaCat, error: erroreCat } = await supabase
                 .from("categorie")
                 .insert({ nome: nomeCategoria })
-                .select("id, nome")
+                .select("id, nome, colore")
                 .single();
               if (erroreCat || !nuovaCat) {
                 setErrore(`Errore nella creazione della categoria "${nomeCategoria}": ${erroreCat?.message ?? "sconosciuto"}`);

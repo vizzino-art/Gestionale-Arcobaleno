@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { ModificaProdottoModal } from "./ModificaProdottoModal";
+import { ColoriCategorieModal } from "./ColoriCategorieModal";
+import { mappaColoriCategorie } from "@/lib/colori-categorie";
 import type { Categoria, Fornitore, Prodotto } from "@/lib/types";
 
 export type ProdottoConCategoria = Prodotto & { categorie: { nome: string } | null };
@@ -41,6 +43,10 @@ export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categori
   const [modaleModifica, setModaleModifica] = useState<
     { modo: "nuovo" } | { modo: "modifica"; prodotto: ProdottoConCategoria } | null
   >(null);
+  const [categorieLocali, setCategorieLocali] = useState<Categoria[]>(categorie);
+  const [modaleColori, setModaleColori] = useState(false);
+
+  const coloriCategorie = useMemo(() => mappaColoriCategorie(categorieLocali), [categorieLocali]);
 
   const prodottiFornitore = useMemo(
     () =>
@@ -103,7 +109,13 @@ export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categori
       </div>
 
       {fornitoreId && (
-        <div className="mb-3 flex justify-end">
+        <div className="mb-3 flex justify-between gap-2">
+          <button
+            onClick={() => setModaleColori(true)}
+            className="shrink-0 rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+          >
+            🎨 Colori categorie
+          </button>
           <button
             onClick={() => setModaleModifica({ modo: "nuovo" })}
             className="shrink-0 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700"
@@ -119,7 +131,8 @@ export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categori
 
       <div className="space-y-2">
         {prodottiFornitore.map((p, i) => {
-          const colore = COLORI_RIGA[i % COLORI_RIGA.length];
+          const coloreCategoria = p.categoria_id ? coloriCategorie.get(p.categoria_id) : undefined;
+          const colore = coloreCategoria ?? COLORI_RIGA[i % COLORI_RIGA.length];
           return (
             <div
               key={p.id}
@@ -220,11 +233,21 @@ export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categori
       {modaleModifica && fornitoreId && (
         <ModificaProdottoModal
           fornitoreId={fornitoreId}
-          categorie={categorie}
+          categorie={categorieLocali}
           prodotto={modaleModifica.modo === "modifica" ? modaleModifica.prodotto : null}
           prodottiFornitore={prodottiFornitore}
           onSalvato={prodottoSalvato}
           onChiudi={() => setModaleModifica(null)}
+        />
+      )}
+
+      {modaleColori && (
+        <ColoriCategorieModal
+          categorie={categorieLocali}
+          onAggiornata={(c) =>
+            setCategorieLocali((prec) => prec.map((x) => (x.id === c.id ? c : x)))
+          }
+          onChiudi={() => setModaleColori(false)}
         />
       )}
     </div>
