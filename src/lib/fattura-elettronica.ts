@@ -58,7 +58,8 @@ function estraiXmlDaP7m(bufferP7m: Buffer): string {
     rawCapture?: { content?: forge.asn1.Asn1 };
   };
 
-  let bytes = p7.content ? p7.content.getBytes() : "";
+  const contenuto = p7.content;
+  let bytes = typeof contenuto === "string" ? contenuto : contenuto ? contenuto.getBytes() : "";
 
   if (!bytes && p7.rawCapture?.content) {
     const octetString = (p7.rawCapture.content.value as forge.asn1.Asn1[] | undefined)?.[0];
