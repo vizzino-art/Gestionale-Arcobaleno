@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { prossimoOrdine } from "@/lib/prodotti";
 import type { Categoria, Fornitore, Prodotto } from "@/lib/types";
@@ -8,6 +8,10 @@ import type { Categoria, Fornitore, Prodotto } from "@/lib/types";
 // Sentinella per "questo prodotto non esiste ancora, crealo" nel menu a
 // tendina di abbinamento — non è un uuid reale, viene risolta in salvaTutto().
 const NUOVO_PRODOTTO = "NUOVO";
+// Sentinella per "voglio creare una categoria nuova" nel menu a tendina
+// categoria — anche questa risolta in salvaTutto() (crea la riga in
+// "categorie" se non esiste già una con lo stesso nome).
+const NUOVA_CATEGORIA = "NUOVA_CATEGORIA";
 
 type Props = {
   fornitori: Fornitore[];
@@ -42,7 +46,8 @@ type RigaLavoro = {
   prodottoId: string; // "" = nessuna corrispondenza scelta
   aggiornaPrezzo: boolean;
   umConfermata: boolean; // per prodotti nuovi con UM non riconosciuta: conferma esplicita di Mauro
-  categoriaId: string; // solo per prodotti nuovi: "" = nessuna, la sceglie dopo in Pannello
+  categoriaId: string; // solo per prodotti nuovi: "" = nessuna, la sceglie dopo in Pannello; NUOVA_CATEGORIA = la crea al volo
+  categoriaNuovoNome: string; // nome della nuova categoria, quando categoriaId === NUOVA_CATEGORIA
 };
 
 function normalizza(s: string): string {
@@ -155,10 +160,6 @@ async function leggiPdfComeBase64(file: File): Promise<{ base64: string; mediaTy
   return { base64, mediaType: "application/pdf" };
 }
 
-function arrotonda(n: number): number {
-  return Math.round(n * 100) / 100;
-}
-
 export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const inputFotoRef = useRef<HTMLInputElement>(null);
@@ -175,6 +176,18 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
   const [salvando, setSalvando] = useState(false);
   const [errore, setErrore] = useState<string | null>(null);
   const [salvato, setSalvato] = useState(false);
+
+  // Categorie: partono da quelle già a sistema, ma quando se ne crea una al
+  // volo da qui (vedi NUOVA_CATEGORIA) si aggiunge anche a questo elenco
+  // locale, così è subito disponibile per altre righe nella stessa bolla
+  // senza dover ricaricare la pagina.
+  const [categorieLocali, setCategorieLocali] = useState<Categoria[]>(categorie);
+
+  // Controllo bolla già registrata: quando numero DDT/fornitore combaciano
+  // con qualcosa già salvato, avvisiamo prima che Mauro la registri due
+  // volte per sbaglio (es. se si dimentica di averla già fatta).
+  const [duplicato, setDuplicato] = useState<{ righe: number } | null>(null);
+  const [duplicatoConfermato, setDuplicatoConfermato] = useState(false);
 
   const prodottiFornitore = useMemo(
     () => prodotti.filter((p) => p.fornitore_id === fornitoreId),
@@ -200,6 +213,34 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
   function prodottoDa(id: string): Prodotto | undefined {
     return prodottiFornitore.find((p) => p.id === id);
   }
+
+  // Controlla se esiste già una bolla registrata con lo stesso numero DDT
+  // per questo fornitore (la chiave naturale per accorgersi di un
+  // doppione). Riparte ogni volta che numero/fornitore cambiano — sia
+  // subito dopo la lettura della foto, sia se Mauro corregge il numero a
+  // mano — con un piccolo ritardo per non interrogare il database a ogni
+  // singolo carattere digitato.
+  useEffect(() => {
+    let annullato = false;
+    const timer = setTimeout(async () => {
+      if (!estrazioneFatta || !fornitoreId || !numeroDdt.trim()) {
+        if (!annullato) setDuplicato(null);
+        return;
+      }
+      const { count } = await supabase
+        .from("storico_prezzi_fatture")
+        .select("id", { count: "exact", head: true })
+        .eq("fornitore_id", fornitoreId)
+        .eq("numero_fattura", `DDT ${numeroDdt.trim()}`);
+      if (!annullato) {
+        setDuplicato(count && count > 0 ? { righe: count } : null);
+      }
+    }, 400);
+    return () => {
+      annullato = true;
+      clearTimeout(timer);
+    };
+  }, [estrazioneFatta, fornitoreId, numeroDdt, supabase]);
 
   async function scattaOCarica(file: File) {
     setErrore(null);
@@ -249,6 +290,7 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
           aggiornaPrezzo: true,
           umConfermata: false,
           categoriaId: "",
+          categoriaNuovoNome: "",
         };
       });
       setRighe(nuoveRighe);
@@ -272,6 +314,10 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
 
   async function salvaTutto() {
     if (!fornitoreId) return;
+    if (duplicato && !duplicatoConfermato) {
+      setErrore("Questa bolla risulta già registrata: spunta la conferma sopra prima di salvare, se sei sicuro che non sia un doppione.");
+      return;
+    }
     setSalvando(true);
     setErrore(null);
 
@@ -294,6 +340,12 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
     // dopo l'altro, non tutti con lo stesso valore.
     let prossimoOrdineNuovo = prossimoOrdine(prodottiFornitore);
 
+    // Copia locale delle categorie disponibili: se in questo salvataggio si
+    // crea una categoria nuova, viene aggiunta qui subito così una riga
+    // successiva con lo stesso nome la riusa invece di crearne un'altra
+    // duplicata.
+    const categorieDisponibili = [...categorieLocali];
+
     for (const r of righe) {
       const prezzo = parseFloat(r.prezzo.replace(",", "."));
       if (isNaN(prezzo)) {
@@ -313,11 +365,44 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
           daVerificare.push(r.descrizione);
           continue;
         }
+
+        // Se per questo prodotto nuovo è stata scelta "+ Nuova categoria",
+        // la creiamo ora (o riusiamo quella appena creata da una riga
+        // precedente nella stessa bolla, se il nome coincide) prima di
+        // creare il prodotto stesso.
+        let categoriaIdFinale = r.categoriaId;
+        if (categoriaIdFinale === NUOVA_CATEGORIA) {
+          const nomeCategoria = r.categoriaNuovoNome.trim();
+          if (!nomeCategoria) {
+            categoriaIdFinale = "";
+          } else {
+            const esistente = categorieDisponibili.find(
+              (c) => normalizza(c.nome) === normalizza(nomeCategoria)
+            );
+            if (esistente) {
+              categoriaIdFinale = esistente.id;
+            } else {
+              const { data: nuovaCat, error: erroreCat } = await supabase
+                .from("categorie")
+                .insert({ nome: nomeCategoria })
+                .select("id, nome")
+                .single();
+              if (erroreCat || !nuovaCat) {
+                setErrore(`Errore nella creazione della categoria "${nomeCategoria}": ${erroreCat?.message ?? "sconosciuto"}`);
+                setSalvando(false);
+                return;
+              }
+              categorieDisponibili.push(nuovaCat);
+              categoriaIdFinale = nuovaCat.id;
+            }
+          }
+        }
+
         const { data: nuovo, error } = await supabase
           .from("prodotti")
           .insert({
             fornitore_id: fornitoreId,
-            categoria_id: r.categoriaId || null,
+            categoria_id: categoriaIdFinale || null,
             descrizione: r.descrizione,
             codice_articolo: r.codiceArticolo || null,
             um: r.um || null,
@@ -381,6 +466,10 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
       }
     }
 
+    if (categorieDisponibili.length !== categorieLocali.length) {
+      setCategorieLocali(categorieDisponibili);
+    }
+
     setSalvando(false);
     setSalvato(righeRiuscite.size > 0);
 
@@ -427,6 +516,7 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
               setEstrazioneFatta(false);
               setAnteprimaUrl(null);
               setAnteprimaPdfNome(null);
+              setDuplicatoConfermato(false);
             }}
             className="mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-500"
           >
@@ -486,7 +576,10 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
               <input
                 type="text"
                 value={numeroDdt}
-                onChange={(e) => setNumeroDdt(e.target.value)}
+                onChange={(e) => {
+                  setNumeroDdt(e.target.value);
+                  setDuplicatoConfermato(false);
+                }}
                 className="mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-500"
               />
             </label>
@@ -501,9 +594,28 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
             </label>
           </div>
 
+          {duplicato && (
+            <div className="mb-3 rounded-md bg-red-50 p-3 text-xs text-red-800">
+              <p>
+                ⚠️ Risulta già registrata una bolla con questo numero DDT per questo fornitore
+                ({duplicato.righe} {duplicato.righe === 1 ? "riga" : "righe"} già salvate). Controlla
+                in &quot;Storico bolle&quot; se l&apos;hai già inserita prima di continuare, per non
+                registrarla due volte.
+              </p>
+              <label className="mt-2 flex items-center gap-1.5">
+                <input
+                  type="checkbox"
+                  checked={duplicatoConfermato}
+                  onChange={(e) => setDuplicatoConfermato(e.target.checked)}
+                />
+                Ho controllato, non è un doppione: registrala comunque
+              </label>
+            </div>
+          )}
+
           {righe.length === 0 && (
             <p className="text-sm text-neutral-500">
-              Non ho trovato righe leggibili in questa foto. Riprova con un'inquadratura più
+              Non ho trovato righe leggibili in questa foto. Riprova con un&apos;inquadratura più
               chiara.
             </p>
           )}
@@ -609,13 +721,23 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
                           className="mt-1 block w-full rounded-md border border-blue-200 bg-white px-2 py-1.5 text-sm text-neutral-900 outline-none focus:border-blue-400"
                         >
                           <option value="">— nessuna, la categorizzo dopo —</option>
-                          {categorie.map((c) => (
+                          <option value={NUOVA_CATEGORIA}>+ Crea nuova categoria…</option>
+                          {categorieLocali.map((c) => (
                             <option key={c.id} value={c.id}>
                               {c.nome}
                             </option>
                           ))}
                         </select>
                       </label>
+                      {r.categoriaId === NUOVA_CATEGORIA && (
+                        <input
+                          type="text"
+                          value={r.categoriaNuovoNome}
+                          onChange={(e) => aggiornaRiga(r.chiave, "categoriaNuovoNome", e.target.value)}
+                          placeholder="Nome della nuova categoria"
+                          className="mt-1.5 block w-full rounded-md border border-blue-200 bg-white px-2 py-1.5 text-sm text-neutral-900 outline-none focus:border-blue-400"
+                        />
+                      )}
                       {!r.categoriaId && (
                         <p className="mt-1.5 text-xs text-blue-700">
                           Senza categoria e peso/kg il prodotto non entra nel confronto prezzi, ma
@@ -666,7 +788,7 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
           {righe.length > 0 && (
             <button
               onClick={salvaTutto}
-              disabled={salvando}
+              disabled={salvando || (duplicato !== null && !duplicatoConfermato)}
               className="mt-4 w-full rounded-lg bg-green-600 px-4 py-3 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
             >
               {salvando ? "Salvo…" : `Salva ${righe.filter((r) => r.prodottoId).length} di ${righe.length} righe`}
