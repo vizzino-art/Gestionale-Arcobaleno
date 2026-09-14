@@ -1,8 +1,11 @@
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 
-// Pagine raggiungibili senza login
-const PUBLIC_PATHS = ["/login"];
+// Pagine raggiungibili senza login. /api/backup-drive è qui perché a
+// chiamarla è Vercel Cron (nessun cookie di sessione) — si autentica da
+// sola controllando l'header Authorization contro CRON_SECRET, non tramite
+// login utente.
+const PUBLIC_PATHS = ["/login", "/api/backup-drive"];
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
