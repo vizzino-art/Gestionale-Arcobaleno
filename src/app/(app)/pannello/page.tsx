@@ -12,13 +12,17 @@ export default async function PannelloPage() {
   ] = await Promise.all([
     supabase.from("fornitori").select("*").order("nome", { ascending: true }),
     // Niente filtro "attivo": qui si vedono e si gestiscono anche i prodotti
-    // disattivati (restano in fondo alla lista), per poterli riattivare in
-    // futuro se il prezzo torna conveniente.
+    // disattivati (mescolati agli attivi in ordine alfabetico, non più in
+    // fondo), per poterli riattivare in futuro se il prezzo torna conveniente.
+    // Ordinamento alfabetico per descrizione (non più sul campo "ordine",
+    // che qui in Pannello resta ignorato): quello resta uso esclusivo di
+    // Ordina (frecce ▲▼ e "manda in fondo"), così l'ordine personalizzato
+    // di Ordina non viene mai più toccato da nulla in Pannello.
     supabase
       .from("prodotti")
       .select("*, categorie(nome)")
       .order("fornitore_id", { ascending: true })
-      .order("ordine", { ascending: true }),
+      .order("descrizione", { ascending: true }),
     supabase.from("categorie").select("*").order("nome", { ascending: true }),
   ]);
 
