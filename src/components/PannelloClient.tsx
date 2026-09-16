@@ -56,16 +56,13 @@ export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categori
     () =>
       prodotti
         .filter((p) => p.fornitore_id === fornitoreId)
-        // I prodotti disattivati vanno in fondo (restano comunque visibili e
+        // Ordine alfabetico puro per descrizione, attivi e disattivati
+        // mescolati insieme (i disattivati restano comunque visibili e
         // modificabili qui, per poterli riattivare in futuro se il prezzo
-        // torna conveniente). A parità, tiebreak su "ordine" e poi
-        // alfabetico (alcuni prodotti migrati condividono lo stesso valore).
-        .sort(
-          (a, b) =>
-            Number(a.attivo === false) - Number(b.attivo === false) ||
-            a.ordine - b.ordine ||
-            a.descrizione.localeCompare(b.descrizione, "it")
-        ),
+        // torna conveniente — solo non sono più raggruppati in fondo).
+        // Il campo "ordine" qui non viene più usato: resta uso esclusivo
+        // di Ordina (frecce ▲▼ e "manda in fondo").
+        .sort((a, b) => a.descrizione.localeCompare(b.descrizione, "it")),
     [prodotti, fornitoreId]
   );
 
