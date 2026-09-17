@@ -2,11 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { Fornitore } from "@/lib/types";
+import type { Conto, Fornitore } from "@/lib/types";
 
 type Props = {
   fornitori: Fornitore[];
   fattureIniziali: FatturaSalvata[];
+  conti: Conto[];
 };
 
 type RigaEstratta = {
@@ -76,7 +77,27 @@ type RataSalvata = {
   // prima della scadenza e con un metodo diverso da quello dichiarato.
   data_pagamento_effettivo: string | null;
   metodo_pagamento_effettivo: string | null;
+  // Il movimento di Prima Nota generato automaticamente da questo pagamento
+  // (punto 23), se esiste già — usato solo per precompilare il conto scelto
+  // l'ultima volta quando il metodo era Bonifico/Altro. Array per come lo
+  // restituisce Supabase, ma è sempre al più uno per via del vincolo unico.
+  movimenti_prima_nota?: { conto_id: string }[];
 };
+
+// Metodi di pagamento che si abbinano sempre allo stesso conto di Prima
+// Nota, senza bisogno di chiedere — gli altri (Bonifico, Altro/libero)
+// vanno da uno dei due conti bancari e vanno quindi scelti ogni volta.
+const CONTO_PER_METODO: Record<string, string> = {
+  "Carta di credito": "Carta di credito",
+  SumUp: "Sumup",
+  Contanti: "Cassa",
+};
+
+function formattaDataPuntata(v: string): string {
+  const [anno, mese, giorno] = v.split("-");
+  if (!anno || !mese || !giorno) return v;
+  return `${giorno}.${mese}.${anno.slice(2)}`;
+}
 
 // Metodi proposti nella tendina; "Altro" apre un campo libero, così Mauro
 // può sempre registrare un metodo nuovo senza dover aspettare che venga
@@ -281,11 +302,24 @@ function confrontaRighe(
 // singola rata — riusato sia dentro ogni fattura sia nella vista d'insieme
 // "Scadenze da pagare". Sta sempre fuori dalla zona stampabile
 // (#vista-stampa-fattura), quindi non compare mai nel PDF.
+//
+// Punto 23 (17/9): al salvataggio, oltre alla rata, sincronizza anche un
+// movimento collegato in Prima Nota (causale standard "<fornitore> SF
+// <numero> del <data>"), scelta di Mauro per non dover più ricopiare a mano
+// ogni pagamento fatture nella prima nota. Il conto si deduce da solo per
+// Carta di credito/SumUp/Contanti; per Bonifico o un metodo libero (due
+// conti bancari possibili) va sempre scelto esplicitamente — mai indovinato.
 function FormPagamentoRata({
   rata,
+  fornitoreNome,
+  numeroFattura,
+  conti,
   onSalvata,
 }: {
   rata: RataSalvata;
+  fornitoreNome: string;
+  numeroFattura: string;
+  conti: Conto[];
   onSalvata: (rata: RataSalvata) => void;
 }) {
   const presetIniziale =
@@ -299,14 +333,30 @@ function FormPagamentoRata({
   const [metodoAltro, setMetodoAltro] = useState(
     presetIniziale === "Altro" ? (rata.metodo_pagamento_effettivo ?? "") : ""
   );
+  const [contoScelto, setContoScelto] = useState(rata.movimenti_prima_nota?.[0]?.conto_id ?? "");
   const [salvando, setSalvando] = useState(false);
   const [errore, setErrore] = useState<string | null>(null);
 
+  // Bonifico o un metodo libero ("Altro…"): due conti bancari possibili
+  // (Volksbank, Trento), quindi va sempre scelto — mai indovinato.
+  const serveContoEsplicito = metodo === "" ? false : !(metodo in CONTO_PER_METODO);
+  const contoRisolto = serveContoEsplicito ? contoScelto : (CONTO_PER_METODO[metodo] && conti.find((c) => c.nome === CONTO_PER_METODO[metodo])?.id) || "";
+
   async function salva() {
-    setSalvando(true);
     setErrore(null);
-    const supabase = createClient();
     const metodoFinale = metodo === "Altro" ? metodoAltro.trim() || null : metodo || null;
+
+    if (data && !metodoFinale) {
+      setErrore("Scegli il metodo di pagamento.");
+      return;
+    }
+    if (data && serveContoEsplicito && !contoScelto) {
+      setErrore("Scegli da quale conto è partito il pagamento.");
+      return;
+    }
+
+    setSalvando(true);
+    const supabase = createClient();
     const { data: aggiornata, error } = await supabase
       .from("rate_pagamento_fatture")
       .update({
@@ -316,12 +366,40 @@ function FormPagamentoRata({
       .eq("id", rata.id)
       .select("*")
       .single();
-    setSalvando(false);
+
     if (error || !aggiornata) {
+      setSalvando(false);
       setErrore(error?.message ?? "Errore nel salvataggio.");
       return;
     }
-    onSalvata(aggiornata as RataSalvata);
+
+    // Sincronizza il movimento collegato in Prima Nota: se il pagamento è
+    // stato tolto (data vuota), elimina il movimento se esisteva; altrimenti
+    // crea/aggiorna l'unico movimento collegato a questa rata (l'onConflict
+    // sul vincolo unico rata_pagamento_id evita di duplicarlo). Un eventuale
+    // errore qui non fa perdere il salvataggio della rata, già andato a buon
+    // fine sopra — resta solo segnalato, riprovabile risalvando.
+    if (!data) {
+      await supabase.from("movimenti_prima_nota").delete().eq("rata_pagamento_id", rata.id);
+    } else if (contoRisolto) {
+      const { error: erroreMovimento } = await supabase.from("movimenti_prima_nota").upsert(
+        {
+          rata_pagamento_id: rata.id,
+          data,
+          causale: `${fornitoreNome} SF ${numeroFattura} del ${formattaDataPuntata(data)}`,
+          conto_id: contoRisolto,
+          importo: -Math.abs(rata.importo),
+          stato: "effettivo",
+        },
+        { onConflict: "rata_pagamento_id" }
+      );
+      if (erroreMovimento) {
+        setErrore(`Rata salvata, ma non sincronizzata in Prima Nota: ${erroreMovimento.message}`);
+      }
+    }
+
+    setSalvando(false);
+    onSalvata({ ...(aggiornata as RataSalvata), movimenti_prima_nota: contoRisolto ? [{ conto_id: contoRisolto }] : [] });
   }
 
   return (
@@ -357,6 +435,21 @@ function FormPagamentoRata({
           className="rounded-md border border-neutral-300 px-1.5 py-1 text-xs"
         />
       )}
+      {serveContoEsplicito && (
+        <select
+          value={contoScelto}
+          onChange={(e) => setContoScelto(e.target.value)}
+          className="rounded-md border border-neutral-300 px-1.5 py-1 text-xs"
+          title="Da quale conto è partito il pagamento"
+        >
+          <option value="">— conto —</option>
+          {conti.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.nome}
+            </option>
+          ))}
+        </select>
+      )}
       <button
         onClick={salva}
         disabled={salvando}
@@ -369,7 +462,7 @@ function FormPagamentoRata({
   );
 }
 
-export function RegistroFattureClient({ fornitori, fattureIniziali }: Props) {
+export function RegistroFattureClient({ fornitori, fattureIniziali, conti }: Props) {
   const [caricamento, setCaricamento] = useState(false);
   const [errore, setErrore] = useState<string | null>(null);
   const [estratta, setEstratta] = useState<FatturaEstratta | null>(null);
@@ -681,7 +774,13 @@ export function RegistroFattureClient({ fornitori, fattureIniziali }: Props) {
                     {scaduta && " (scaduta)"}
                   </span>
                 </div>
-                <FormPagamentoRata rata={r} onSalvata={rataAggiornata} />
+                <FormPagamentoRata
+                  rata={r}
+                  fornitoreNome={r.fornitoreNome}
+                  numeroFattura={r.numeroFattura}
+                  conti={conti}
+                  onSalvata={rataAggiornata}
+                />
               </div>
             );
           })}
@@ -935,7 +1034,13 @@ export function RegistroFattureClient({ fornitori, fattureIniziali }: Props) {
                           Rata {r.numero_rata} — {formattaEuro(r.importo)} (scad.{" "}
                           {formattaData(r.data_scadenza)})
                         </span>
-                        <FormPagamentoRata rata={r} onSalvata={rataAggiornata} />
+                        <FormPagamentoRata
+                          rata={r}
+                          fornitoreNome={f.fornitore_nome}
+                          numeroFattura={f.numero}
+                          conti={conti}
+                          onSalvata={rataAggiornata}
+                        />
                       </div>
                     ))}
                   </div>
