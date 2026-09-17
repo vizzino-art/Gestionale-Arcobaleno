@@ -15,7 +15,11 @@ import { randomBytes } from "crypto";
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+  // .trim(): un copia-incolla da un campo di Vercel può portarsi dietro uno
+  // spazio o un "a capo" invisibile in coda, che sembra identico a occhio
+  // ma fa fallire il confronto esatto che fa Google lato server
+  // (invalid_client) — meglio toglierlo sempre in automatico.
+  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID?.trim();
   if (!clientId) {
     return NextResponse.json(
       { errore: "GOOGLE_OAUTH_CLIENT_ID non configurata su Vercel" },
