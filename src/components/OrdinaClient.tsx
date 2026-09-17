@@ -292,15 +292,19 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
               </div>
 
               {/* Magazzino: si aggiorna spesso, resta un campo pronto da scrivere,
-                  a sinistra del nome prodotto. */}
-              <label className="shrink-0 text-center text-[10px] leading-tight text-neutral-500">
+                  a sinistra del nome prodotto. Il colore Fresco/Gelo/Ambiente
+                  copre tutto il blocco (etichetta + numero), non solo il
+                  bordo del riquadro, per essere ben visibile a colpo d'occhio. */}
+              <label
+                className={`shrink-0 rounded-lg border-2 p-1.5 text-center text-[10px] leading-tight text-neutral-500 ${classeRiquadroMagazzino(p.tipo_conservazione)}`}
+              >
                 Magazzino{unita && ` (${unita})`}
                 <input
                   type="number"
                   step="any"
                   defaultValue={p.magazzino_attuale ?? ""}
                   onChange={(e) => aggiornaCampo(p.id, "magazzino_attuale", e.target.value)}
-                  className={`mt-1 block w-14 rounded-md border px-1 py-2 text-center text-sm outline-none focus:border-neutral-500 ${classeRiquadroMagazzino(p.tipo_conservazione)}`}
+                  className="mt-1 block w-14 rounded-md border border-white/60 bg-white/80 px-1 py-2 text-center text-sm text-neutral-900 outline-none focus:border-neutral-500"
                 />
               </label>
 

@@ -5,11 +5,16 @@ import { createClient } from "@/lib/supabase/client";
 import { ModificaProdottoModal } from "./ModificaProdottoModal";
 import { ColoriCategorieModal } from "./ColoriCategorieModal";
 import { TrovaDoppioniModal } from "./TrovaDoppioniModal";
-import { TipoConservazioneModal } from "./TipoConservazioneModal";
-import type { TipoConservazione } from "@/lib/tipo-conservazione";
+import {
+  ETICHETTE_TIPO_CONSERVAZIONE,
+  COLORI_TIPO_CONSERVAZIONE,
+  type TipoConservazione,
+} from "@/lib/tipo-conservazione";
 import { GraficoStoricoPrezzo } from "./GraficoStoricoPrezzo";
 import { mappaColoriCategorie } from "@/lib/colori-categorie";
 import type { Categoria, Fornitore, Prodotto } from "@/lib/types";
+
+const TIPI_CONSERVAZIONE: TipoConservazione[] = ["fresco", "gelo", "ambiente"];
 
 export type ProdottoConCategoria = Prodotto & { categorie: { nome: string } | null };
 
@@ -50,8 +55,8 @@ export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categori
   const [categorieLocali, setCategorieLocali] = useState<Categoria[]>(categorie);
   const [modaleColori, setModaleColori] = useState(false);
   const [modaleDoppioni, setModaleDoppioni] = useState(false);
-  const [modaleConservazione, setModaleConservazione] = useState(false);
   const [ricerca, setRicerca] = useState("");
+  const [salvandoConservazioneId, setSalvandoConservazioneId] = useState<string | null>(null);
 
   const coloriCategorie = useMemo(() => mappaColoriCategorie(categorieLocali), [categorieLocali]);
 
@@ -121,9 +126,23 @@ export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categori
     );
   }
 
-  function conservazioneAggiornata(prodottoId: string, tipo: TipoConservazione | null) {
+  // Assegnazione diretta sulla riga di Pannello: niente finestra separata,
+  // così mentre scorri l'elenco tocchi Fresco/Gelo/Ambiente e passi al
+  // prodotto successivo (richiesto da Mauro: lo strumento dedicato era
+  // troppo lento da usare su 217 prodotti).
+  async function scegliConservazione(p: ProdottoConCategoria, tipo: TipoConservazione | null) {
+    setSalvandoConservazioneId(p.id);
+    const { error } = await supabase
+      .from("prodotti")
+      .update({ tipo_conservazione: tipo })
+      .eq("id", p.id);
+    setSalvandoConservazioneId(null);
+    if (error) {
+      alert(`Errore nel salvataggio: ${error.message}`);
+      return;
+    }
     setProdotti((prev) =>
-      prev.map((p) => (p.id === prodottoId ? { ...p, tipo_conservazione: tipo } : p))
+      prev.map((x) => (x.id === p.id ? { ...x, tipo_conservazione: tipo } : x))
     );
   }
 
@@ -161,12 +180,6 @@ export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categori
             >
               🔀 Prodotti doppi
             </button>
-            <button
-              onClick={() => setModaleConservazione(true)}
-              className="shrink-0 rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
-            >
-              🧊 Fresco/Gelo/Ambiente
-            </button>
           </div>
           <button
             onClick={() => setModaleModifica({ modo: "nuovo" })}
@@ -202,34 +215,66 @@ export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categori
           return (
             <div
               key={p.id}
-              className={`flex items-center justify-between gap-4 rounded-xl border border-neutral-200 p-3 ${
+              className={`rounded-xl border border-neutral-200 p-3 ${
                 p.attivo ? colore : "bg-neutral-100 opacity-60"
               }`}
             >
-              <div>
-                <p className="text-sm font-medium text-neutral-900">
-                  {p.descrizione}
-                  {!p.attivo && <span className="ml-2 text-xs text-neutral-500">(disattivato)</span>}
-                </p>
-                <p className="text-xs text-neutral-500">
-                  {p.categorie?.nome ?? "senza categoria"} · €{p.prezzo_unitario?.toFixed(2) ?? "—"} /{p.um ?? "—"}
-                </p>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-neutral-900">
+                    {p.descrizione}
+                    {!p.attivo && <span className="ml-2 text-xs text-neutral-500">(disattivato)</span>}
+                  </p>
+                  <p className="text-xs text-neutral-500">
+                    {p.categorie?.nome ?? "senza categoria"} · €{p.prezzo_unitario?.toFixed(2) ?? "—"} /{p.um ?? "—"}
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-1">
+                  <button
+                    onClick={() => setModaleModifica({ modo: "modifica", prodotto: p })}
+                    className="rounded-md bg-white/70 px-3 py-2 text-sm text-neutral-500 hover:bg-white"
+                    title="Modifica prodotto"
+                  >
+                    ✏️ Modifica
+                  </button>
+                  <button
+                    onClick={() => apriStorico(p)}
+                    className="rounded-md bg-white/70 px-3 py-2 text-sm text-neutral-500 hover:bg-white"
+                    title="Storico prezzi"
+                  >
+                    📈 Storico
+                  </button>
+                </div>
               </div>
-              <div className="flex shrink-0 gap-1">
+
+              {/* Fresco/Gelo/Ambiente direttamente sulla riga: si scorre
+                  l'elenco e si tocca il pulsante giusto, senza aprire nulla
+                  (colora poi il riquadro Magazzino di questo prodotto in
+                  Ordina). */}
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <button
-                  onClick={() => setModaleModifica({ modo: "modifica", prodotto: p })}
-                  className="rounded-md bg-white/70 px-3 py-2 text-sm text-neutral-500 hover:bg-white"
-                  title="Modifica prodotto"
+                  onClick={() => scegliConservazione(p, null)}
+                  disabled={salvandoConservazioneId === p.id}
+                  title="Nessuna classificazione"
+                  className={`flex h-7 w-7 items-center justify-center rounded-full border-2 bg-white/70 text-[10px] leading-none text-neutral-400 ${
+                    p.tipo_conservazione ? "border-transparent" : "border-neutral-900"
+                  }`}
                 >
-                  ✏️ Modifica
+                  ✕
                 </button>
-                <button
-                  onClick={() => apriStorico(p)}
-                  className="rounded-md bg-white/70 px-3 py-2 text-sm text-neutral-500 hover:bg-white"
-                  title="Storico prezzi"
-                >
-                  📈 Storico
-                </button>
+                {TIPI_CONSERVAZIONE.map((tipo) => (
+                  <button
+                    key={tipo}
+                    onClick={() => scegliConservazione(p, tipo)}
+                    disabled={salvandoConservazioneId === p.id}
+                    title={ETICHETTE_TIPO_CONSERVAZIONE[tipo]}
+                    className={`rounded-full border-2 px-2.5 py-1 text-xs ${COLORI_TIPO_CONSERVAZIONE[tipo]} ${
+                      p.tipo_conservazione === tipo ? "border-neutral-900" : "border-transparent"
+                    }`}
+                  >
+                    {ETICHETTE_TIPO_CONSERVAZIONE[tipo]}
+                  </button>
+                ))}
               </div>
             </div>
           );
@@ -327,15 +372,6 @@ export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categori
           fornitori={fornitori}
           onUnito={prodottiUniti}
           onChiudi={() => setModaleDoppioni(false)}
-        />
-      )}
-
-      {modaleConservazione && (
-        <TipoConservazioneModal
-          prodotti={prodotti}
-          fornitori={fornitori}
-          onAggiornato={conservazioneAggiornata}
-          onChiudi={() => setModaleConservazione(false)}
         />
       )}
     </div>
