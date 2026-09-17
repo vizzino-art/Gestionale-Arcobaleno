@@ -46,6 +46,9 @@ export type Prodotto = {
   magazzino_in_confezione: boolean;
   omaggio_ogni: number | null;
   omaggio_gratis: number | null;
+  // Come si conserva il prodotto (Fresco/Gelo/Ambiente): colora solo il
+  // riquadro "Magazzino" in Ordina. null = non ancora classificato.
+  tipo_conservazione: "fresco" | "gelo" | "ambiente" | null;
   attivo: boolean;
   ordine: number;
   data_aggiornamento: string;
