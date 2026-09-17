@@ -382,6 +382,13 @@ function FormPagamentoRata({
     if (!data) {
       await supabase.from("movimenti_prima_nota").delete().eq("rata_pagamento_id", rata.id);
     } else if (contoRisolto) {
+      // Se la data è nel futuro (es. un RID già programmato) il movimento va
+      // in Prima Nota come "pianificato": conta nel saldo previsto ma non in
+      // quello attuale, finché quel giorno non arriva davvero. Non c'è un
+      // meccanismo che lo "promuove" da solo ad effettivo quando la data
+      // arriva: se serve, si ri-salva quel giorno (o lo si corregge a mano
+      // in Prima Nota).
+      const oggiIso = new Date().toISOString().slice(0, 10);
       const { error: erroreMovimento } = await supabase.from("movimenti_prima_nota").upsert(
         {
           rata_pagamento_id: rata.id,
@@ -389,7 +396,7 @@ function FormPagamentoRata({
           causale: `${fornitoreNome} SF ${numeroFattura} del ${formattaDataPuntata(data)}`,
           conto_id: contoRisolto,
           importo: -Math.abs(rata.importo),
-          stato: "effettivo",
+          stato: data <= oggiIso ? "effettivo" : "pianificato",
         },
         { onConflict: "rata_pagamento_id" }
       );
