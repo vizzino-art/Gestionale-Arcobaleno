@@ -1,0 +1,420 @@
+"use client";
+
+import { useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import type { Conto, MovimentoPrimaNota, SaldoConto } from "@/lib/types";
+
+type Props = {
+  conti: Conto[];
+  movimentiIniziali: MovimentoPrimaNota[];
+  saldiIniziali: SaldoConto[];
+};
+
+// Causali ricorrenti viste nel vecchio file Excel: suggerite nel campo
+// causale (datalist) così non vanno riscritte ogni volta, ma resta comunque
+// un campo libero — non è una lista chiusa.
+const CAUSALI_SUGGERITE = ["Incasso del Giorno", "Versamento Contante", "Prelievo Contanti"];
+
+function formattaEuro(v: number): string {
+  return v.toLocaleString("it-IT", { style: "currency", currency: "EUR" });
+}
+
+function formattaData(v: string): string {
+  const [anno, mese, giorno] = v.split("-");
+  if (!anno || !mese || !giorno) return v;
+  return `${giorno}/${mese}/${anno}`;
+}
+
+function oggiIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// Più recenti prima; a parità di data, l'ultimo inserito prima.
+function comparaMovimenti(a: MovimentoPrimaNota, b: MovimentoPrimaNota): number {
+  if (a.data !== b.data) return a.data < b.data ? 1 : -1;
+  return a.created_at < b.created_at ? 1 : -1;
+}
+
+export function PrimaNotaClient({ conti, movimentiIniziali, saldiIniziali }: Props) {
+  const primoContoId = conti[0]?.id ?? "";
+
+  const [movimenti, setMovimenti] = useState<MovimentoPrimaNota[]>(
+    [...movimentiIniziali].sort(comparaMovimenti)
+  );
+  const [saldi, setSaldi] = useState<SaldoConto[]>(saldiIniziali);
+
+  // --- Form di inserimento rapido ---------------------------------------
+  const [data, setData] = useState(oggiIso());
+  const [causale, setCausale] = useState("");
+  const [contoId, setContoId] = useState(primoContoId);
+  const [tipo, setTipo] = useState<"entrata" | "uscita">("uscita");
+  const [importo, setImporto] = useState("");
+  const [stato, setStato] = useState<"effettivo" | "pianificato">("effettivo");
+  const [trasferimento, setTrasferimento] = useState(false);
+  const [contoDestinazioneId, setContoDestinazioneId] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [erroreForm, setErroreForm] = useState<string | null>(null);
+
+  const contiPerId = new Map(conti.map((c) => [c.id, c]));
+
+  function applicaDelta(righe: MovimentoPrimaNota[], segno: 1 | -1) {
+    setSaldi((prec) =>
+      prec.map((s) => {
+        const tocca = righe.filter((r) => r.conto_id === s.conto_id);
+        if (tocca.length === 0) return s;
+        const deltaPrevisto = segno * tocca.reduce((acc, r) => acc + r.importo, 0);
+        const deltaAttuale =
+          segno * tocca.filter((r) => r.stato === "effettivo").reduce((acc, r) => acc + r.importo, 0);
+        return {
+          ...s,
+          saldo_attuale: s.saldo_attuale + deltaAttuale,
+          saldo_previsto: s.saldo_previsto + deltaPrevisto,
+        };
+      })
+    );
+  }
+
+  async function salvaMovimento(e: React.FormEvent) {
+    e.preventDefault();
+    setErroreForm(null);
+
+    const valore = parseFloat(importo.replace(",", "."));
+    if (!causale.trim()) {
+      setErroreForm("Inserisci una causale.");
+      return;
+    }
+    if (!valore || valore <= 0) {
+      setErroreForm("Inserisci un importo maggiore di zero.");
+      return;
+    }
+    if (trasferimento && (!contoDestinazioneId || contoDestinazioneId === contoId)) {
+      setErroreForm("Scegli un conto di arrivo diverso dal conto di partenza.");
+      return;
+    }
+
+    setSalvando(true);
+    try {
+      const supabase = createClient();
+
+      if (trasferimento) {
+        const trasferimentoId = crypto.randomUUID();
+        const { data: inserite, error } = await supabase
+          .from("movimenti_prima_nota")
+          .insert([
+            { data, causale: causale.trim(), conto_id: contoId, importo: -valore, stato, trasferimento_id: trasferimentoId },
+            { data, causale: causale.trim(), conto_id: contoDestinazioneId, importo: valore, stato, trasferimento_id: trasferimentoId },
+          ])
+          .select("*");
+        if (error) {
+          setErroreForm(error.message);
+          return;
+        }
+        const righe = inserite as MovimentoPrimaNota[];
+        setMovimenti((prec) => [...righe, ...prec].sort(comparaMovimenti));
+        applicaDelta(righe, 1);
+      } else {
+        const importoConSegno = tipo === "uscita" ? -valore : valore;
+        const { data: inserito, error } = await supabase
+          .from("movimenti_prima_nota")
+          .insert({ data, causale: causale.trim(), conto_id: contoId, importo: importoConSegno, stato })
+          .select("*")
+          .single();
+        if (error) {
+          setErroreForm(error.message);
+          return;
+        }
+        const riga = inserito as MovimentoPrimaNota;
+        setMovimenti((prec) => [riga, ...prec].sort(comparaMovimenti));
+        applicaDelta([riga], 1);
+      }
+
+      // Resetta solo causale e importo: data/conto/stato restano com'erano,
+      // così inserire più movimenti di fila è più veloce.
+      setCausale("");
+      setImporto("");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  // --- Elenco / filtri -----------------------------------------------------
+  const [filtroContoId, setFiltroContoId] = useState("");
+  const [filtroStato, setFiltroStato] = useState("");
+  const [caricandoLista, setCaricandoLista] = useState(false);
+  const [erroreEliminazione, setErroreEliminazione] = useState<Record<string, string>>({});
+  const [eliminandoId, setEliminandoId] = useState<string | null>(null);
+
+  async function ricaricaMovimenti(nuovoContoId: string, nuovoStato: string) {
+    setCaricandoLista(true);
+    try {
+      const supabase = createClient();
+      let query = supabase
+        .from("movimenti_prima_nota")
+        .select("*")
+        .order("data", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (nuovoContoId) query = query.eq("conto_id", nuovoContoId);
+      if (nuovoStato) query = query.eq("stato", nuovoStato);
+      const { data: righe, error } = await query;
+      if (!error) setMovimenti((righe ?? []) as MovimentoPrimaNota[]);
+    } finally {
+      setCaricandoLista(false);
+    }
+  }
+
+  async function eliminaMovimento(m: MovimentoPrimaNota) {
+    const collegati = m.trasferimento_id
+      ? movimenti.filter((x) => x.trasferimento_id === m.trasferimento_id)
+      : [m];
+    const conferma = window.confirm(
+      collegati.length > 1
+        ? "Eliminare questo trasferimento? Verranno eliminate entrambe le righe collegate."
+        : "Eliminare questo movimento?"
+    );
+    if (!conferma) return;
+
+    setEliminandoId(m.id);
+    setErroreEliminazione((prec) => ({ ...prec, [m.id]: "" }));
+    try {
+      const supabase = createClient();
+      const ids = collegati.map((c) => c.id);
+      const { error } = await supabase.from("movimenti_prima_nota").delete().in("id", ids);
+      if (error) {
+        setErroreEliminazione((prec) => ({ ...prec, [m.id]: error.message }));
+        return;
+      }
+      setMovimenti((prec) => prec.filter((x) => !ids.includes(x.id)));
+      applicaDelta(collegati, -1);
+    } finally {
+      setEliminandoId(null);
+    }
+  }
+
+  return (
+    <div>
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        {saldi.map((s) => (
+          <div key={s.conto_id} className="rounded-lg border border-neutral-200 bg-white p-3">
+            <p className="text-xs text-neutral-500">{s.conto_nome}</p>
+            <p className={s.saldo_attuale < 0 ? "text-base font-semibold text-red-600" : "text-base font-semibold text-neutral-900"}>
+              {formattaEuro(s.saldo_attuale)}
+            </p>
+            {s.saldo_previsto !== s.saldo_attuale && (
+              <p className="text-xs text-neutral-500">Previsto: {formattaEuro(s.saldo_previsto)}</p>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <form onSubmit={salvaMovimento} className="mb-6 rounded-lg border border-neutral-200 bg-white p-4">
+        <h2 className="mb-3 text-base font-semibold text-neutral-900">Nuovo movimento</h2>
+
+        <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <label className="text-xs text-neutral-500">Data</label>
+            <input
+              type="date"
+              value={data}
+              onChange={(e) => setData(e.target.value)}
+              className="mt-0.5 block w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="text-xs text-neutral-500">Causale</label>
+            <input
+              type="text"
+              list="causali-suggerite"
+              value={causale}
+              onChange={(e) => setCausale(e.target.value)}
+              placeholder="es. Incasso del Giorno"
+              className="mt-0.5 block w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+            />
+            <datalist id="causali-suggerite">
+              {CAUSALI_SUGGERITE.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+          </div>
+          <div>
+            <label className="text-xs text-neutral-500">Importo</label>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={importo}
+              onChange={(e) => setImporto(e.target.value)}
+              placeholder="0,00"
+              className="mt-0.5 block w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+            />
+          </div>
+        </div>
+
+        <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <label className="text-xs text-neutral-500">{trasferimento ? "Conto di partenza" : "Conto"}</label>
+            <select
+              value={contoId}
+              onChange={(e) => setContoId(e.target.value)}
+              className="mt-0.5 block w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+            >
+              {conti.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nome}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {!trasferimento && (
+            <div>
+              <label className="text-xs text-neutral-500">Tipo</label>
+              <select
+                value={tipo}
+                onChange={(e) => setTipo(e.target.value as "entrata" | "uscita")}
+                className="mt-0.5 block w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              >
+                <option value="uscita">Uscita</option>
+                <option value="entrata">Entrata</option>
+              </select>
+            </div>
+          )}
+
+          {trasferimento && (
+            <div>
+              <label className="text-xs text-neutral-500">Conto di arrivo</label>
+              <select
+                value={contoDestinazioneId}
+                onChange={(e) => setContoDestinazioneId(e.target.value)}
+                className="mt-0.5 block w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              >
+                <option value="">— scegli —</option>
+                {conti
+                  .filter((c) => c.id !== contoId)
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nome}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs text-neutral-500">Stato</label>
+            <select
+              value={stato}
+              onChange={(e) => setStato(e.target.value as "effettivo" | "pianificato")}
+              className="mt-0.5 block w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+            >
+              <option value="effettivo">Già avvenuto</option>
+              <option value="pianificato">Pianificato (futuro)</option>
+            </select>
+          </div>
+
+          <div className="flex items-end pb-1.5">
+            <label className="flex items-center gap-1.5 text-xs text-neutral-600">
+              <input
+                type="checkbox"
+                checked={trasferimento}
+                onChange={(e) => {
+                  setTrasferimento(e.target.checked);
+                  setContoDestinazioneId("");
+                }}
+              />
+              È uno spostamento fra due miei conti
+            </label>
+          </div>
+        </div>
+
+        {erroreForm && <p className="mb-3 rounded-lg bg-red-50 p-2 text-xs text-red-700">{erroreForm}</p>}
+
+        <button
+          type="submit"
+          disabled={salvando}
+          className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        >
+          {salvando ? "Salvataggio…" : "Registra movimento"}
+        </button>
+      </form>
+
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <h2 className="mr-auto text-base font-semibold text-neutral-900">Movimenti recenti</h2>
+        <select
+          value={filtroContoId}
+          onChange={(e) => {
+            setFiltroContoId(e.target.value);
+            ricaricaMovimenti(e.target.value, filtroStato);
+          }}
+          className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+        >
+          <option value="">Tutti i conti</option>
+          {conti.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.nome}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filtroStato}
+          onChange={(e) => {
+            setFiltroStato(e.target.value);
+            ricaricaMovimenti(filtroContoId, e.target.value);
+          }}
+          className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+        >
+          <option value="">Tutti gli stati</option>
+          <option value="effettivo">Solo già avvenuti</option>
+          <option value="pianificato">Solo pianificati</option>
+        </select>
+      </div>
+
+      {caricandoLista && <p className="mb-2 text-sm text-neutral-500">Caricamento…</p>}
+
+      {movimenti.length === 0 && !caricandoLista && (
+        <p className="text-sm text-neutral-500">Nessun movimento trovato.</p>
+      )}
+
+      <div className="space-y-1">
+        {movimenti.map((m) => (
+          <div
+            key={m.id}
+            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2"
+          >
+            <div className="min-w-0">
+              <p className="text-sm text-neutral-900">
+                {formattaData(m.data)} — {m.causale}
+                {m.trasferimento_id && (
+                  <span className="ml-1.5 rounded-full bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-600">
+                    trasferimento
+                  </span>
+                )}
+                {m.stato === "pianificato" && (
+                  <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">
+                    pianificato
+                  </span>
+                )}
+              </p>
+              <p className="text-xs text-neutral-500">{contiPerId.get(m.conto_id)?.nome ?? "?"}</p>
+              {erroreEliminazione[m.id] && (
+                <p className="text-xs text-red-600">Errore: {erroreEliminazione[m.id]}</p>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <span className={m.importo < 0 ? "text-sm font-medium text-red-600" : "text-sm font-medium text-green-700"}>
+                {formattaEuro(m.importo)}
+              </span>
+              <button
+                onClick={() => eliminaMovimento(m)}
+                disabled={eliminandoId === m.id}
+                className="text-xs text-neutral-400 hover:text-red-600 disabled:opacity-50"
+                title="Elimina"
+              >
+                {eliminandoId === m.id ? "…" : "✕"}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
