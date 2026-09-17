@@ -47,9 +47,11 @@ function clientSupabaseServizio() {
 // Il refresh_token ottenuto lì è salvato come variabile d'ambiente e viene
 // usato qui per rinnovare l'accesso automaticamente ogni notte.
 function clientDrive() {
-  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
-  const refreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
+  // .trim(): vedi start/route.ts — protegge da spazi/a-capo invisibili
+  // finiti per sbaglio nel valore incollato su Vercel.
+  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID?.trim();
+  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET?.trim();
+  const refreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN?.trim();
   const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
   oauth2Client.setCredentials({ refresh_token: refreshToken });
   return google.drive({ version: "v3", auth: oauth2Client });
