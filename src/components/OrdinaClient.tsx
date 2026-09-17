@@ -270,110 +270,116 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
           return (
             <div
               key={p.id}
-              className={`flex items-start gap-2 rounded-xl border border-neutral-200 p-3 ${colore}`}
+              className="flex items-stretch overflow-hidden rounded-xl border border-neutral-200"
             >
-              <div className="flex shrink-0 flex-col gap-0.5 pt-0.5">
-                <button
-                  onClick={() => spostaProdotto(p.id, "su")}
-                  disabled={ricercaAttiva || i === 0}
-                  aria-label="Sposta su"
-                  className="rounded px-1.5 py-1 text-neutral-400 hover:bg-white/70 hover:text-neutral-700 disabled:opacity-20"
-                >
-                  ▲
-                </button>
-                <button
-                  onClick={() => spostaProdotto(p.id, "giu")}
-                  disabled={ricercaAttiva || i === prodottiFornitore.length - 1}
-                  aria-label="Sposta giù"
-                  className="rounded px-1.5 py-1 text-neutral-400 hover:bg-white/70 hover:text-neutral-700 disabled:opacity-20"
-                >
-                  ▼
-                </button>
-              </div>
-
-              {/* Magazzino: si aggiorna spesso, resta un campo pronto da scrivere,
-                  a sinistra del nome prodotto. Il colore Fresco/Gelo/Ambiente
-                  copre tutto il blocco (etichetta + numero), non solo il
-                  bordo del riquadro, per essere ben visibile a colpo d'occhio. */}
-              <label
-                className={`shrink-0 rounded-lg border-2 p-1.5 text-center text-[10px] leading-tight text-neutral-500 ${classeRiquadroMagazzino(p.tipo_conservazione)}`}
+              {/* Blocco Magazzino: frecce di ordinamento + campo magazzino,
+                  un blocco a sé, colorato per Fresco/Gelo/Ambiente — di
+                  proposito staccato dal blocco prodotto (colorato per
+                  categoria) invece di un'etichetta colorata dentro la riga,
+                  per non mischiare i due colori. */}
+              <div
+                className={`flex shrink-0 items-center gap-1.5 p-2 ${classeRiquadroMagazzino(p.tipo_conservazione)}`}
               >
-                Magazzino{unita && ` (${unita})`}
-                <input
-                  type="number"
-                  step="any"
-                  defaultValue={p.magazzino_attuale ?? ""}
-                  onChange={(e) => aggiornaCampo(p.id, "magazzino_attuale", e.target.value)}
-                  className="mt-1 block w-14 rounded-md border border-white/60 bg-white/80 px-1 py-2 text-center text-sm text-neutral-900 outline-none focus:border-neutral-500"
-                />
-              </label>
-
-              <div className="min-w-0 flex-1">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm font-medium text-neutral-900">{p.descrizione}</p>
-                  <div className="flex shrink-0 items-center gap-1">
-                    {stato && (
-                      <span className="text-[10px] text-neutral-400">
-                        {stato === "salvando" ? "salvataggio…" : "✓ salvato"}
-                      </span>
-                    )}
-                    <button
-                      onClick={() => setModaleModifica(p)}
-                      title="Modifica prodotto"
-                      className="rounded-md bg-white/70 px-1.5 py-1 text-xs hover:bg-white"
-                    >
-                      ✏️
-                    </button>
-                    <button
-                      onClick={() => mandaInFondo(p.id)}
-                      title="Manda in fondo alla lista (finché non lo sposti tu)"
-                      className="rounded-md bg-white/70 px-1.5 py-1 text-xs hover:bg-white"
-                    >
-                      ⬇
-                    </button>
-                  </div>
+                <div className="flex flex-col gap-0.5">
+                  <button
+                    onClick={() => spostaProdotto(p.id, "su")}
+                    disabled={ricercaAttiva || i === 0}
+                    aria-label="Sposta su"
+                    className="rounded px-1.5 py-1 text-neutral-500 hover:bg-white/70 hover:text-neutral-800 disabled:opacity-20"
+                  >
+                    ▲
+                  </button>
+                  <button
+                    onClick={() => spostaProdotto(p.id, "giu")}
+                    disabled={ricercaAttiva || i === prodottiFornitore.length - 1}
+                    aria-label="Sposta giù"
+                    className="rounded px-1.5 py-1 text-neutral-500 hover:bg-white/70 hover:text-neutral-800 disabled:opacity-20"
+                  >
+                    ▼
+                  </button>
                 </div>
 
-                {riga && (
-                  <p className="mt-1 text-sm font-medium text-neutral-900">
-                    Ordina: {arrotonda(riga.quantitaOrdine)} {riga.unitaMostrata}
-                    {riga.quantitaOmaggio > 0 && (
-                      <span className="text-green-700"> (+{arrotonda(riga.quantitaOmaggio)} omaggio)</span>
-                    )}
-                  </p>
-                )}
-
-                {conviene && (
-                  <p className="mt-1 text-xs text-green-700">✓ È il più conveniente in questa categoria</p>
-                )}
-                {nonConviene && migliore && (
-                  <p className="mt-1 text-xs text-amber-700">
-                    In questa categoria conviene {migliore.fornitore_nome} (€{migliore.prezzo_per_kg?.toFixed(2)}/kg
-                    {propria?.prezzo_per_kg != null && ` contro €${propria.prezzo_per_kg.toFixed(2)}/kg qui`})
-                  </p>
-                )}
-                {st && (
-                  <p className="mt-1 text-xs text-neutral-500">
-                    Ultimo pagato: €{st.ultimo_pagato.toFixed(2)} ({new Date(st.ultimo_pagato_data).toLocaleDateString("it-IT")}) · Minimo: €
-                    {st.prezzo_minimo.toFixed(2)}
-                  </p>
-                )}
+                <label className="text-center text-[10px] leading-tight text-neutral-600">
+                  Magazzino{unita && ` (${unita})`}
+                  <input
+                    type="number"
+                    step="any"
+                    defaultValue={p.magazzino_attuale ?? ""}
+                    onChange={(e) => aggiornaCampo(p.id, "magazzino_attuale", e.target.value)}
+                    className="mt-1 block w-14 rounded-md border border-white/70 bg-white/80 px-1 py-2 text-center text-sm text-neutral-900 outline-none focus:border-neutral-500"
+                  />
+                </label>
               </div>
 
-              {/* Obiettivo: cambia quasi mai, quindi è solo testo — tap apre
-                  conferma + popup di modifica invece di un campo sempre editabile. */}
-              <button
-                onClick={() => modificaObiettivo(p)}
-                title="Tocca per modificare l'obiettivo"
-                className="shrink-0 rounded-md px-2 py-1.5 text-right text-[10px] leading-tight text-neutral-500 hover:bg-white/70"
-              >
-                Obiettivo
-                <br />
-                <span className="text-sm font-medium text-neutral-800">
-                  {p.quantita_obiettivo ?? "—"}
-                </span>
-                {unita && <span> {unita}</span>}
-              </button>
+              {/* Blocco prodotto: colorato per categoria, come prima. */}
+              <div className={`flex flex-1 items-start gap-2 p-3 ${colore}`}>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm font-medium text-neutral-900">{p.descrizione}</p>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {stato && (
+                        <span className="text-[10px] text-neutral-400">
+                          {stato === "salvando" ? "salvataggio…" : "✓ salvato"}
+                        </span>
+                      )}
+                      <button
+                        onClick={() => setModaleModifica(p)}
+                        title="Modifica prodotto"
+                        className="rounded-md bg-white/70 px-1.5 py-1 text-xs hover:bg-white"
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        onClick={() => mandaInFondo(p.id)}
+                        title="Manda in fondo alla lista (finché non lo sposti tu)"
+                        className="rounded-md bg-white/70 px-1.5 py-1 text-xs hover:bg-white"
+                      >
+                        ⬇
+                      </button>
+                    </div>
+                  </div>
+
+                  {riga && (
+                    <p className="mt-1 text-sm font-medium text-neutral-900">
+                      Ordina: {arrotonda(riga.quantitaOrdine)} {riga.unitaMostrata}
+                      {riga.quantitaOmaggio > 0 && (
+                        <span className="text-green-700"> (+{arrotonda(riga.quantitaOmaggio)} omaggio)</span>
+                      )}
+                    </p>
+                  )}
+
+                  {conviene && (
+                    <p className="mt-1 text-xs text-green-700">✓ È il più conveniente in questa categoria</p>
+                  )}
+                  {nonConviene && migliore && (
+                    <p className="mt-1 text-xs text-amber-700">
+                      In questa categoria conviene {migliore.fornitore_nome} (€{migliore.prezzo_per_kg?.toFixed(2)}/kg
+                      {propria?.prezzo_per_kg != null && ` contro €${propria.prezzo_per_kg.toFixed(2)}/kg qui`})
+                    </p>
+                  )}
+                  {st && (
+                    <p className="mt-1 text-xs text-neutral-500">
+                      Ultimo pagato: €{st.ultimo_pagato.toFixed(2)} ({new Date(st.ultimo_pagato_data).toLocaleDateString("it-IT")}) · Minimo: €
+                      {st.prezzo_minimo.toFixed(2)}
+                    </p>
+                  )}
+                </div>
+
+                {/* Obiettivo: cambia quasi mai, quindi è solo testo — tap apre
+                    conferma + popup di modifica invece di un campo sempre editabile. */}
+                <button
+                  onClick={() => modificaObiettivo(p)}
+                  title="Tocca per modificare l'obiettivo"
+                  className="shrink-0 rounded-md px-2 py-1.5 text-right text-[10px] leading-tight text-neutral-500 hover:bg-white/70"
+                >
+                  Obiettivo
+                  <br />
+                  <span className="text-sm font-medium text-neutral-800">
+                    {p.quantita_obiettivo ?? "—"}
+                  </span>
+                  {unita && <span> {unita}</span>}
+                </button>
+              </div>
             </div>
           );
         })}
