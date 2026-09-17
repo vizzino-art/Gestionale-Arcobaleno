@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/client";
 import { ModificaProdottoModal } from "./ModificaProdottoModal";
 import { ColoriCategorieModal } from "./ColoriCategorieModal";
 import { TrovaDoppioniModal } from "./TrovaDoppioniModal";
+import { TipoConservazioneModal } from "./TipoConservazioneModal";
+import type { TipoConservazione } from "@/lib/tipo-conservazione";
 import { GraficoStoricoPrezzo } from "./GraficoStoricoPrezzo";
 import { mappaColoriCategorie } from "@/lib/colori-categorie";
 import type { Categoria, Fornitore, Prodotto } from "@/lib/types";
@@ -48,6 +50,7 @@ export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categori
   const [categorieLocali, setCategorieLocali] = useState<Categoria[]>(categorie);
   const [modaleColori, setModaleColori] = useState(false);
   const [modaleDoppioni, setModaleDoppioni] = useState(false);
+  const [modaleConservazione, setModaleConservazione] = useState(false);
   const [ricerca, setRicerca] = useState("");
 
   const coloriCategorie = useMemo(() => mappaColoriCategorie(categorieLocali), [categorieLocali]);
@@ -118,6 +121,12 @@ export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categori
     );
   }
 
+  function conservazioneAggiornata(prodottoId: string, tipo: TipoConservazione | null) {
+    setProdotti((prev) =>
+      prev.map((p) => (p.id === prodottoId ? { ...p, tipo_conservazione: tipo } : p))
+    );
+  }
+
   return (
     <div>
       <div className="mb-3 flex gap-1 overflow-x-auto border-b border-neutral-200 pb-2">
@@ -151,6 +160,12 @@ export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categori
               className="shrink-0 rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
             >
               🔀 Prodotti doppi
+            </button>
+            <button
+              onClick={() => setModaleConservazione(true)}
+              className="shrink-0 rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+            >
+              🧊 Fresco/Gelo/Ambiente
             </button>
           </div>
           <button
@@ -312,6 +327,15 @@ export function PannelloClient({ fornitori, prodotti: prodottiIniziali, categori
           fornitori={fornitori}
           onUnito={prodottiUniti}
           onChiudi={() => setModaleDoppioni(false)}
+        />
+      )}
+
+      {modaleConservazione && (
+        <TipoConservazioneModal
+          prodotti={prodotti}
+          fornitori={fornitori}
+          onAggiornato={conservazioneAggiornata}
+          onChiudi={() => setModaleConservazione(false)}
         />
       )}
     </div>

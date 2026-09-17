@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { calcolaPrezzoNetto, prossimoOrdine } from "@/lib/prodotti";
+import { ETICHETTE_TIPO_CONSERVAZIONE, type TipoConservazione } from "@/lib/tipo-conservazione";
 import type { Categoria, Prodotto } from "@/lib/types";
 import type { ProdottoConCategoria } from "./PannelloClient";
 
@@ -24,6 +25,7 @@ type Form = {
   pezzi_per_confezione: string;
   magazzino_in_confezione: boolean;
   peso_kg_per_unita: string;
+  tipo_conservazione: "" | TipoConservazione;
   prezzo_listino: string;
   sconto1: string;
   sconto2: string;
@@ -43,6 +45,7 @@ function formIniziale(p: ProdottoConCategoria | null): Form {
     pezzi_per_confezione: p?.pezzi_per_confezione?.toString() ?? "",
     magazzino_in_confezione: p?.magazzino_in_confezione ?? false,
     peso_kg_per_unita: p?.peso_kg_per_unita?.toString() ?? "",
+    tipo_conservazione: p?.tipo_conservazione ?? "",
     prezzo_listino: p?.prezzo_listino?.toString() ?? "",
     sconto1: p?.sconto1?.toString() ?? "",
     sconto2: p?.sconto2?.toString() ?? "",
@@ -101,6 +104,7 @@ export function ModificaProdottoModal({
       pezzi_per_confezione: numOrNull(form.pezzi_per_confezione),
       magazzino_in_confezione: form.magazzino_in_confezione,
       peso_kg_per_unita: numOrNull(form.peso_kg_per_unita),
+      tipo_conservazione: form.tipo_conservazione === "" ? null : form.tipo_conservazione,
       prezzo_listino: numOrNull(form.prezzo_listino),
       sconto1: numOrNull(form.sconto1),
       sconto2: numOrNull(form.sconto2),
@@ -226,6 +230,22 @@ export function ModificaProdottoModal({
               />
             </label>
           </div>
+
+          <label className="block text-xs text-neutral-500">
+            Conservazione (colora il riquadro Magazzino in Ordina)
+            <select
+              value={form.tipo_conservazione}
+              onChange={(e) => campo("tipo_conservazione", e.target.value as Form["tipo_conservazione"])}
+              className="mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-500"
+            >
+              <option value="">— non specificato —</option>
+              {(Object.keys(ETICHETTE_TIPO_CONSERVAZIONE) as TipoConservazione[]).map((t) => (
+                <option key={t} value={t}>
+                  {ETICHETTE_TIPO_CONSERVAZIONE[t]}
+                </option>
+              ))}
+            </select>
+          </label>
 
           <label className="flex items-start gap-2 rounded-lg border border-neutral-200 p-3 text-sm text-neutral-700">
             <input

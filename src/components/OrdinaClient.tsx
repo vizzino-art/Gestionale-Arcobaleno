@@ -11,6 +11,7 @@ import {
   unitaMagazzino,
 } from "@/lib/ordina";
 import { mappaColoriCategorie } from "@/lib/colori-categorie";
+import { classeRiquadroMagazzino } from "@/lib/tipo-conservazione";
 import { ModificaProdottoModal } from "./ModificaProdottoModal";
 import type { ProdottoConCategoria } from "./PannelloClient";
 import type {
@@ -299,7 +300,7 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
                   step="any"
                   defaultValue={p.magazzino_attuale ?? ""}
                   onChange={(e) => aggiornaCampo(p.id, "magazzino_attuale", e.target.value)}
-                  className="mt-1 block w-14 rounded-md border border-neutral-300 px-1 py-2 text-center text-sm outline-none focus:border-neutral-500"
+                  className={`mt-1 block w-14 rounded-md border px-1 py-2 text-center text-sm outline-none focus:border-neutral-500 ${classeRiquadroMagazzino(p.tipo_conservazione)}`}
                 />
               </label>
 
