@@ -8,6 +8,7 @@ type Props = {
   conti: Conto[];
   movimentiIniziali: MovimentoPrimaNota[];
   saldiIniziali: SaldoConto[];
+  daConfermareIniziali: MovimentoPrimaNota[];
 };
 
 // Causali ricorrenti viste nel vecchio file Excel: suggerite nel campo
@@ -35,13 +36,16 @@ function comparaMovimenti(a: MovimentoPrimaNota, b: MovimentoPrimaNota): number 
   return a.created_at < b.created_at ? 1 : -1;
 }
 
-export function PrimaNotaClient({ conti, movimentiIniziali, saldiIniziali }: Props) {
+export function PrimaNotaClient({ conti, movimentiIniziali, saldiIniziali, daConfermareIniziali }: Props) {
   const primoContoId = conti[0]?.id ?? "";
 
   const [movimenti, setMovimenti] = useState<MovimentoPrimaNota[]>(
     [...movimentiIniziali].sort(comparaMovimenti)
   );
   const [saldi, setSaldi] = useState<SaldoConto[]>(saldiIniziali);
+  const [daConfermare, setDaConfermare] = useState<MovimentoPrimaNota[]>(daConfermareIniziali);
+  const [confermandoId, setConfermandoId] = useState<string | null>(null);
+  const [erroreConferma, setErroreConferma] = useState<Record<string, string>>({});
 
   // --- Form di inserimento rapido ---------------------------------------
   const [data, setData] = useState(oggiIso());
@@ -191,6 +195,32 @@ export function PrimaNotaClient({ conti, movimentiIniziali, saldiIniziali }: Pro
     }
   }
 
+  // --- Conferma movimenti pianificati arrivati a scadenza ------------------
+  async function confermaMovimento(m: MovimentoPrimaNota) {
+    setConfermandoId(m.id);
+    setErroreConferma((prec) => ({ ...prec, [m.id]: "" }));
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("movimenti_prima_nota")
+        .update({ stato: "effettivo" })
+        .eq("id", m.id);
+      if (error) {
+        setErroreConferma((prec) => ({ ...prec, [m.id]: error.message }));
+        return;
+      }
+      setDaConfermare((prec) => prec.filter((x) => x.id !== m.id));
+      // Era già contato nel saldo previsto (era pianificato): ora conta
+      // anche nel saldo attuale, il previsto non cambia.
+      setSaldi((prec) =>
+        prec.map((s) => (s.conto_id === m.conto_id ? { ...s, saldo_attuale: s.saldo_attuale + m.importo } : s))
+      );
+      setMovimenti((prec) => prec.map((x) => (x.id === m.id ? { ...x, stato: "effettivo" } : x)));
+    } finally {
+      setConfermandoId(null);
+    }
+  }
+
   return (
     <div>
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -206,6 +236,48 @@ export function PrimaNotaClient({ conti, movimentiIniziali, saldiIniziali }: Pro
           </div>
         ))}
       </div>
+
+      {daConfermare.length > 0 && (
+        <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <h2 className="mb-1 text-base font-semibold text-amber-900">
+            ⚠️ Da confermare ({daConfermare.length})
+          </h2>
+          <p className="mb-3 text-xs text-amber-800">
+            Questi movimenti erano pianificati per oggi o prima. Se sono avvenuti davvero, confermali per
+            farli contare nel saldo attuale — altrimenti lasciali così, restano pianificati.
+          </p>
+          <div className="space-y-1">
+            {daConfermare.map((m) => (
+              <div
+                key={m.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm text-neutral-900">
+                    {formattaData(m.data)} — {m.causale}
+                  </p>
+                  <p className="text-xs text-neutral-500">{contiPerId.get(m.conto_id)?.nome ?? "?"}</p>
+                  {erroreConferma[m.id] && (
+                    <p className="text-xs text-red-600">Errore: {erroreConferma[m.id]}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className={m.importo < 0 ? "text-sm font-medium text-red-600" : "text-sm font-medium text-green-700"}>
+                    {formattaEuro(m.importo)}
+                  </span>
+                  <button
+                    onClick={() => confermaMovimento(m)}
+                    disabled={confermandoId === m.id}
+                    className="rounded-md bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    {confermandoId === m.id ? "…" : "✓ È avvenuto"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <form onSubmit={salvaMovimento} className="mb-6 rounded-lg border border-neutral-200 bg-white p-4">
         <h2 className="mb-3 text-base font-semibold text-neutral-900">Nuovo movimento</h2>
