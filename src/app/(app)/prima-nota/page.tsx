@@ -11,11 +11,17 @@ const MOVIMENTI_RECENTI = 200;
 
 export default async function PrimaNotaPage() {
   const supabase = await createClient();
+  const oggiIso = new Date().toISOString().slice(0, 10);
 
   const [
     { data: conti, error: erroreConti },
     { data: movimenti, error: erroreMovimenti },
     { data: saldi, error: erroreSaldi },
+    // Pianificati la cui data è arrivata (oggi o prima): non basta guardare
+    // solo i MOVIMENTI_RECENTI, perché uno pianificato tempo fa può essere
+    // ormai "uscito" da quella finestra man mano che si accumulano
+    // movimenti più recenti — va cercato a parte, senza limite di quantità.
+    { data: daConfermare, error: erroreDaConfermare },
   ] = await Promise.all([
     supabase.from("conti").select("*").order("ordine", { ascending: true }),
     supabase
@@ -25,9 +31,15 @@ export default async function PrimaNotaPage() {
       .order("created_at", { ascending: false })
       .limit(MOVIMENTI_RECENTI),
     supabase.from("v_saldi_conti").select("*"),
+    supabase
+      .from("movimenti_prima_nota")
+      .select("*")
+      .eq("stato", "pianificato")
+      .lte("data", oggiIso)
+      .order("data", { ascending: true }),
   ]);
 
-  const errore = erroreConti || erroreMovimenti || erroreSaldi;
+  const errore = erroreConti || erroreMovimenti || erroreSaldi || erroreDaConfermare;
 
   return (
     <div>
@@ -49,6 +61,7 @@ export default async function PrimaNotaPage() {
           conti={(conti ?? []) as Conto[]}
           movimentiIniziali={(movimenti ?? []) as MovimentoPrimaNota[]}
           saldiIniziali={(saldi ?? []) as SaldoConto[]}
+          daConfermareIniziali={(daConfermare ?? []) as MovimentoPrimaNota[]}
         />
       )}
     </div>
