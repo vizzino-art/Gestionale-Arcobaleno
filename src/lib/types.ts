@@ -109,6 +109,11 @@ export type MovimentoPrimaNota = {
   // Collega le due righe di uno spostamento fra due conti propri (es.
   // versamento contanti in banca): stesso trasferimento_id su entrambe.
   trasferimento_id: string | null;
+  // Se questo movimento è stato generato automaticamente dal pagamento di
+  // una rata in Registro Fatture, l'id di quella rata (vedi
+  // supabase/collega-pagamenti-prima-nota.sql) — altrimenti null (movimento
+  // inserito a mano).
+  rata_pagamento_id: string | null;
   note: string | null;
   created_at: string;
 };
