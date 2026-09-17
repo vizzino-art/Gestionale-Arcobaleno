@@ -40,14 +40,19 @@ function clientSupabaseServizio() {
   );
 }
 
+// I Service Account non hanno mai spazio di archiviazione proprio su Drive
+// ("Service Accounts do not have storage quota"): per questo l'autenticazione
+// usa invece l'account Google personale di chi ha fatto il login OAuth una
+// tantum su /api/auth/google-drive/start (vedi quella route per i dettagli).
+// Il refresh_token ottenuto lì è salvato come variabile d'ambiente e viene
+// usato qui per rinnovare l'accesso automaticamente ogni notte.
 function clientDrive() {
-  const chiavePrivata = (process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY ?? "").replace(/\\n/g, "\n");
-  const auth = new google.auth.JWT({
-    email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-    key: chiavePrivata,
-    scopes: ["https://www.googleapis.com/auth/drive.file"],
-  });
-  return google.drive({ version: "v3", auth });
+  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+  const refreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
+  const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
+  oauth2Client.setCredentials({ refresh_token: refreshToken });
+  return google.drive({ version: "v3", auth: oauth2Client });
 }
 
 export async function GET(request: NextRequest) {
@@ -58,6 +63,15 @@ export async function GET(request: NextRequest) {
   const cartellaPadre = process.env.GOOGLE_DRIVE_BACKUP_FOLDER_ID;
   if (!cartellaPadre) {
     return NextResponse.json({ errore: "GOOGLE_DRIVE_BACKUP_FOLDER_ID non configurata" }, { status: 500 });
+  }
+  if (!process.env.GOOGLE_OAUTH_REFRESH_TOKEN) {
+    return NextResponse.json(
+      {
+        errore:
+          "GOOGLE_OAUTH_REFRESH_TOKEN non configurata: serve autorizzare l'app visitando /api/auth/google-drive/start da loggati",
+      },
+      { status: 500 }
+    );
   }
 
   // Tutto il resto (credenziali Google, chiamate a Drive/Supabase) può
