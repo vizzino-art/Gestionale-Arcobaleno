@@ -85,3 +85,40 @@ export type CambioMigliorFornitore = {
   categorie: { nome: string } | null;
   fornitori: { nome: string } | null;
 };
+
+// ----------------------------------------------------------------------------
+// PRIMA NOTA (vedi supabase/crea-prima-nota.sql)
+// ----------------------------------------------------------------------------
+
+export type Conto = {
+  id: string;
+  nome: string;
+  ordine: number;
+};
+
+export type MovimentoPrimaNota = {
+  id: string;
+  data: string;
+  causale: string;
+  conto_id: string;
+  // positivo = entrata, negativo = uscita
+  importo: number;
+  // effettivo = già avvenuto (conta nel saldo attuale). pianificato =
+  // inserito in anticipo, es. una rata futura (conta solo nel saldo previsto).
+  stato: "effettivo" | "pianificato";
+  // Collega le due righe di uno spostamento fra due conti propri (es.
+  // versamento contanti in banca): stesso trasferimento_id su entrambe.
+  trasferimento_id: string | null;
+  note: string | null;
+  created_at: string;
+};
+
+// Da v_saldi_conti: saldo attuale (solo movimenti effettivi) e saldo
+// previsto (effettivo + pianificato) per ciascun conto.
+export type SaldoConto = {
+  conto_id: string;
+  conto_nome: string;
+  ordine: number;
+  saldo_attuale: number;
+  saldo_previsto: number;
+};
