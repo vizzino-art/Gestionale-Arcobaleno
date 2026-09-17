@@ -41,8 +41,15 @@ export async function GET(request: NextRequest) {
       <p><a href="/api/auth/google-drive/start">Riprova</a></p>`);
   }
 
-  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+  // .trim(): un copia-incolla da un campo di Vercel può portarsi dietro uno
+  // spazio o un "a capo" invisibile in coda, che sembra identico a occhio ma
+  // fa fallire il confronto esatto che fa Google lato server (invalid_client)
+  // — meglio toglierlo sempre in automatico piuttosto che fidarsi di come
+  // appare copiato.
+  const clientIdGrezzo = process.env.GOOGLE_OAUTH_CLIENT_ID;
+  const clientSecretGrezzo = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+  const clientId = clientIdGrezzo?.trim();
+  const clientSecret = clientSecretGrezzo?.trim();
   if (!clientId || !clientSecret) {
     return pagina(`<p>GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET non configurate su Vercel.</p>`);
   }
@@ -74,8 +81,13 @@ export async function GET(request: NextRequest) {
     response.cookies.delete("google_oauth_state");
     return response;
   } catch (e) {
+    // Diagnostica extra (nessun valore segreto, solo lunghezze/spazi) per
+    // capire subito se il problema è ancora uno spazio nascosto nelle
+    // variabili, senza dover rifare tutto il giro di screenshot.
+    const diagnostica = `Client ID: ${clientIdGrezzo?.length ?? 0} caratteri grezzi, ${clientId.length} dopo trim.
+Client Secret: ${clientSecretGrezzo?.length ?? 0} caratteri grezzi, ${clientSecret.length} dopo trim.`;
     return pagina(`<p>Errore durante lo scambio del codice con Google: ${
       e instanceof Error ? e.message : "errore sconosciuto"
-    }</p><p><a href="/api/auth/google-drive/start">Riprova</a></p>`);
+    }</p><pre style="background:#f4f4f4;padding:8px;white-space:pre-wrap">${diagnostica}</pre><p><a href="/api/auth/google-drive/start">Riprova</a></p>`);
   }
 }
