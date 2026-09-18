@@ -16,24 +16,38 @@ export default function LoginPage() {
     setCaricamento(true);
     setErrore(null);
 
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    // Tutto avvolto in try/catch: prima veniva gestito solo il caso "email o
+    // password sbagliate" (restituito da Supabase come { error }), ma un
+    // problema di connessione/rete (es. dispositivo con sistema molto
+    // datato) fa fallire la chiamata stessa con un'eccezione, che senza
+    // questo try/catch spariva senza mostrare nulla a schermo.
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (error) {
-      setCaricamento(false);
+      if (error) {
+        setErrore(
+          error.message === "Invalid login credentials"
+            ? "Email o password non corrette."
+            : error.message
+        );
+        return;
+      }
+
+      router.replace("/");
+      router.refresh();
+    } catch (err) {
       setErrore(
-        error.message === "Invalid login credentials"
-          ? "Email o password non corrette."
-          : error.message
+        `Errore di connessione: ${
+          err instanceof Error ? err.message : String(err)
+        }`
       );
-      return;
+    } finally {
+      setCaricamento(false);
     }
-
-    router.replace("/");
-    router.refresh();
   }
 
   return (
