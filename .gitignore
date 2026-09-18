@@ -37,6 +37,12 @@ yarn-error.log*
 # vercel
 .vercel
 
+# dati locali sensibili (prezzi/fatture/contabilità reali) — repo pubblico,
+# non vanno mai committati
+/migrazione-dati
+/supabase/import-prima-nota-*.sql
+/supabase/riepilogo-import-prima-nota.csv
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
