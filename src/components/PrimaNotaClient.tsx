@@ -195,6 +195,48 @@ export function PrimaNotaClient({ conti, movimentiIniziali, saldiIniziali, daCon
     }
   }
 
+  // --- Importazione incassi giornalieri dal foglio Google (punto 23, 18/9) -
+  const [importandoIncassi, setImportandoIncassi] = useState(false);
+  const [risultatoImportazione, setRisultatoImportazione] = useState<string | null>(null);
+  const [erroreImportazione, setErroreImportazione] = useState<string | null>(null);
+
+  async function ricaricaSaldi() {
+    const supabase = createClient();
+    const { data } = await supabase.from("v_saldi_conti").select("*");
+    if (data) setSaldi(data as SaldoConto[]);
+  }
+
+  async function importaIncassi() {
+    setImportandoIncassi(true);
+    setErroreImportazione(null);
+    setRisultatoImportazione(null);
+    try {
+      const risposta = await fetch("/api/importa-incassi", { method: "POST" });
+      const corpo = await risposta.json();
+      if (!risposta.ok && risposta.status !== 207) {
+        setErroreImportazione(corpo.errore ?? "Errore sconosciuto durante l'importazione.");
+        return;
+      }
+      const schedeConErrore = (corpo.risultati as { scheda: string; movimenti: number; errore?: string }[]).filter(
+        (r) => r.errore
+      );
+      setRisultatoImportazione(
+        `${corpo.totaleMovimenti} movimenti creati/aggiornati.` +
+          (schedeConErrore.length > 0
+            ? ` Problemi su: ${schedeConErrore.map((r) => `${r.scheda} (${r.errore})`).join(", ")}`
+            : "")
+      );
+      // I movimenti creati dall'import potrebbero non rientrare nei filtri
+      // correnti (data vecchia, conto diverso): ricarichiamo lista e saldi
+      // così quello che si vede è sempre coerente con quanto appena scritto.
+      await Promise.all([ricaricaMovimenti(filtroContoId, filtroStato), ricaricaSaldi()]);
+    } catch (e) {
+      setErroreImportazione(e instanceof Error ? e.message : "Errore di rete durante l'importazione.");
+    } finally {
+      setImportandoIncassi(false);
+    }
+  }
+
   // --- Conferma movimenti pianificati arrivati a scadenza ------------------
   async function confermaMovimento(m: MovimentoPrimaNota) {
     setConfermandoId(m.id);
@@ -235,6 +277,18 @@ export function PrimaNotaClient({ conti, movimentiIniziali, saldiIniziali, daCon
             )}
           </div>
         ))}
+      </div>
+
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        <button
+          onClick={importaIncassi}
+          disabled={importandoIncassi}
+          className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+        >
+          {importandoIncassi ? "Importazione in corso…" : "📥 Importa incassi"}
+        </button>
+        {risultatoImportazione && <span className="text-xs text-neutral-600">{risultatoImportazione}</span>}
+        {erroreImportazione && <span className="text-xs text-red-600">Errore: {erroreImportazione}</span>}
       </div>
 
       {daConfermare.length > 0 && (
