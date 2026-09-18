@@ -32,17 +32,48 @@ const scriptDiagnosticoErrori = `
       banner.style.top = '0';
       banner.style.left = '0';
       banner.style.right = '0';
+      banner.style.maxHeight = '35vh';
+      banner.style.overflowY = 'auto';
       banner.style.zIndex = '999999';
       banner.style.background = '#b91c1c';
       banner.style.color = '#fff';
-      banner.style.padding = '10px';
+      banner.style.padding = '10px 40px 10px 10px';
       banner.style.fontSize = '13px';
       banner.style.fontFamily = 'monospace';
       banner.style.whiteSpace = 'pre-wrap';
       banner.style.wordBreak = 'break-word';
+      // Senza questo il banner, restando fisso sopra il resto della
+      // pagina, blocca i click su menu/pulsanti sottostanti: qui i click
+      // "attraversano" il banner e arrivano a quello che c'è sotto, tranne
+      // sul pulsante di chiusura qui sotto che resta cliccabile.
+      banner.style.pointerEvents = 'none';
+
+      var chiudi = document.createElement('button');
+      chiudi.textContent = 'Chiudi';
+      chiudi.style.position = 'absolute';
+      chiudi.style.top = '8px';
+      chiudi.style.right = '8px';
+      chiudi.style.pointerEvents = 'auto';
+      chiudi.style.background = '#fff';
+      chiudi.style.color = '#b91c1c';
+      chiudi.style.border = 'none';
+      chiudi.style.borderRadius = '4px';
+      chiudi.style.padding = '4px 8px';
+      chiudi.style.fontSize = '12px';
+      chiudi.style.cursor = 'pointer';
+      chiudi.onclick = function () {
+        banner.style.display = 'none';
+      };
+      banner.appendChild(chiudi);
+
+      var testo = document.createElement('div');
+      testo.id = 'debug-errore-js-testo';
+      banner.insertBefore(testo, chiudi);
+
       document.body.insertBefore(banner, document.body.firstChild);
     }
-    banner.textContent = window.__erroriJsDebug.join('\\n');
+    var testoEl = document.getElementById('debug-errore-js-testo');
+    if (testoEl) testoEl.textContent = window.__erroriJsDebug.join('\\n');
   }
   window.onerror = function (message, source, lineno, colno) {
     registra('Errore JS: ' + message + ' (riga ' + lineno + ':' + colno + ')');
