@@ -337,7 +337,14 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
     setSalvando(true);
     setErrore(null);
 
-    const daSaltare: string[] = [];
+    // Tenute separate perché il motivo dello scarto è diverso e va detto in
+    // modo chiaro: senza questa distinzione una riga scartata per prezzo
+    // mancante (frequente con le bolle di trasporto, che spesso non
+    // riportano il prezzo) mostrava lo stesso messaggio "non abbinata a un
+    // prodotto" anche quando il prodotto era corretto, mandando a cercare
+    // il problema nel posto sbagliato.
+    const daSaltarePrezzo: string[] = [];
+    const daSaltareProdotto: string[] = [];
     const daVerificare: string[] = [];
     const righeRiuscite = new Set<string>();
     const inserimentiStorico: {
@@ -365,7 +372,7 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
     for (const r of righe) {
       const prezzo = parseFloat(r.prezzo.replace(",", "."));
       if (isNaN(prezzo)) {
-        daSaltare.push(r.descrizione);
+        daSaltarePrezzo.push(r.descrizione);
         continue;
       }
       const quantita = r.quantita ? parseFloat(r.quantita.replace(",", ".")) : null;
@@ -440,7 +447,7 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
         // Il prezzo è già quello giusto appena inserito: non serve un
         // aggiornamento separato più sotto.
       } else if (!prodottoId) {
-        daSaltare.push(r.descrizione);
+        daSaltareProdotto.push(r.descrizione);
         continue;
       } else if (r.aggiornaPrezzo) {
         aggiornamentiPrezzo.push({ id: prodottoId, prezzo });
@@ -504,9 +511,14 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
     }
 
     const messaggi: string[] = [];
-    if (daSaltare.length > 0) {
+    if (daSaltarePrezzo.length > 0) {
       messaggi.push(
-        `${daSaltare.length} riga/e non abbinata/e a un prodotto (${daSaltare.join(", ")}): scegli un prodotto dal menu o "+ Crea nuovo prodotto".`
+        `${daSaltarePrezzo.length} riga/e senza un prezzo valido (${daSaltarePrezzo.join(", ")}): le bolle di trasporto spesso non riportano il prezzo — scrivilo a mano nel campo "Prezzo (€)" per poterle salvare.`
+      );
+    }
+    if (daSaltareProdotto.length > 0) {
+      messaggi.push(
+        `${daSaltareProdotto.length} riga/e non abbinata/e a un prodotto (${daSaltareProdotto.join(", ")}): scegli un prodotto dal menu o "+ Crea nuovo prodotto".`
       );
     }
     if (daVerificare.length > 0) {
