@@ -24,6 +24,10 @@ const scriptDiagnosticoErrori = `
   }
   function provaMostra() {
     if (!document.body) return;
+    // Se non c'è ancora nessun errore registrato non creiamo nulla: senza
+    // questo controllo il banner compariva vuoto ad ogni caricamento
+    // pagina (veniva creato comunque al DOMContentLoaded qui sotto).
+    if (!window.__erroriJsDebug || window.__erroriJsDebug.length === 0) return;
     var banner = document.getElementById('debug-errore-js');
     if (!banner) {
       banner = document.createElement('div');
