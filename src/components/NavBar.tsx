@@ -4,20 +4,15 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const VOCI = [
-  { href: "/fornitori", label: "Fornitori" },
-  { href: "/ordina", label: "Ordina" },
-  { href: "/pannello", label: "Pannello" },
-  { href: "/riepilogo", label: "Riepilogo" },
-  { href: "/confronta", label: "Confronta" },
-  { href: "/registra-bolla", label: "Registra bolla" },
-  { href: "/storico-bolle", label: "Storico bolle" },
-  { href: "/registro-fatture", label: "Registro Fatture" },
-  { href: "/prima-nota", label: "Prima Nota" },
-];
+type Voce = { href: string; label: string };
 
-export function NavBar() {
+// Le voci mostrate arrivano dal layout server (src/app/(app)/layout.tsx),
+// già filtrate in base ai permessi dell'utente loggato (punto 13, 19/9) —
+// così un utente con accesso limitato non vede nemmeno il link a una
+// pagina che non può aprire.
+export function NavBar({ voci, mostraUtenti }: { voci: Voce[]; mostraUtenti: boolean }) {
   const percorso = usePathname();
+  const tutteLeVoci = mostraUtenti ? [...voci, { href: "/utenti", label: "👤 Utenti" }] : voci;
 
   return (
     <nav className="border-b border-neutral-200 bg-white">
@@ -34,7 +29,7 @@ export function NavBar() {
         </Link>
         <div className="relative min-w-0 flex-1">
           <div className="flex gap-1 overflow-x-auto [-webkit-overflow-scrolling:touch]">
-            {VOCI.map((voce) => {
+            {tutteLeVoci.map((voce) => {
               // Voce attiva se il percorso coincide esattamente, o se e' una
               // sotto-pagina di quella voce (es. /pannello/qualcosa).
               const attiva = percorso === voce.href || percorso?.startsWith(voce.href + "/");
