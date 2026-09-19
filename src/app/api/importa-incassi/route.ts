@@ -34,6 +34,17 @@ const MESI = [
   "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre",
 ];
 
+// Da gennaio al 18/9/2026 gli incassi giornalieri erano già stati scritti a
+// mano da Mauro nel vecchio Excel Prima Nota, e sono quindi già dentro
+// all'importazione storica del 17/9 (punto 23) — importarli di nuovo da qui
+// creerebbe doppioni (successo il 19/9, corretto cancellando le righe con
+// chiave_incasso). Da questa data in poi Mauro non scrive più a mano:
+// "Importa incassi" è l'unica fonte, quindi si può ripremere il bottone
+// tutte le volte che si vuole (gli incassi da questa data in poi si
+// aggiornano via chiave_incasso invece di duplicarsi), ma va sempre
+// ignorato tutto ciò che è precedente a questa soglia fissa.
+const DATA_INIZIO_IMPORT_AUTOMATICO = "2026-09-19";
+
 // Le 5 colonne da importare: intestazione da cercare nella riga di
 // intestazione della scheda, causale e conto Prima Nota di destinazione
 // (concordati con Mauro il 18/9). "richiedeIncasso" si applica solo a
@@ -156,6 +167,7 @@ function estraiMovimentiScheda(
     const riga = righe[i];
     const dataIso = parseDataItaliana(riga[colData]);
     if (!dataIso) continue; // riga vuota, di riepilogo o non ancora compilata
+    if (dataIso < DATA_INIZIO_IMPORT_AUTOMATICO) continue; // già coperto dallo storico, mai reimportare
 
     for (const col of colonneTrovate) {
       const importo = euroToNumber(riga[col.indice]);
