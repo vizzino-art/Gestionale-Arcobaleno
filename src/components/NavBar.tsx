@@ -6,14 +6,13 @@ import { usePathname } from "next/navigation";
 
 type Voce = { href: string; label: string };
 
-// Raggruppamento per area di lavoro (20/9, richiesto da Mauro dopo aver
-// visto il semplice "a capo" del primo tentativo: voci non correlate
-// finivano una sotto l'altra senza senso). Pagine correlate stanno vicine
-// e vanno a capo INSIEME, mai spezzate a metà — così il menu resta
-// ordinato anche su schermi stretti, invece di andare a capo a caso in
-// mezzo a una riga lunga. Una voce il cui href non compare qui (una pagina
-// nuova aggiunta in futuro e non ancora sistemata in un gruppo) non sparisce:
-// finisce da sola in un gruppo a sé in fondo, vedi raggruppa() sotto.
+// Raggruppamento per area di lavoro (20/9, richiesto da Mauro dopo due
+// tentativi scartati: prima un semplice "a capo" mischiava voci non
+// correlate senza senso; poi impilare le voci correlate una sopra l'altra
+// creava buchi bianchi sotto i gruppi da una sola voce, sembrava rotto.
+// Ogni gruppo di più voci è ora un'unica "pillola" con bordino, tutte le
+// sue voci affiancate alla stessa altezza — nessun buco, e quando non
+// c'entrano tutte su una riga la pillola va a capo intera, mai spezzata.
 const GRUPPI: string[][] = [
   ["/fornitori"],
   ["/ordina", "/riepilogo"],
@@ -32,6 +31,8 @@ function raggruppa(voci: Voce[]): Voce[][] {
     trovate.forEach((v) => usati.add(v.href));
     if (trovate.length > 0) gruppi.push(trovate);
   }
+  // Qualsiasi voce non elencata sopra (es. "Utenti", o una pagina futura
+  // non ancora assegnata a un gruppo) resta comunque visibile, da sola.
   for (const v of voci) {
     if (!usati.has(v.href)) gruppi.push([v]);
   }
@@ -60,9 +61,16 @@ export function NavBar({ voci, mostraUtenti }: { voci: Voce[]; mostraUtenti: boo
             className="h-9 w-auto sm:h-10"
           />
         </Link>
-        <div className="flex flex-wrap gap-x-4 gap-y-2">
+        <div className="flex flex-wrap items-start gap-2">
           {gruppi.map((gruppo) => (
-            <div key={gruppo[0].href} className="flex flex-col gap-0.5">
+            <div
+              key={gruppo[0].href}
+              className={
+                gruppo.length > 1
+                  ? "flex divide-x divide-neutral-200 overflow-hidden rounded-md border border-neutral-200"
+                  : undefined
+              }
+            >
               {gruppo.map((voce) => {
                 // Voce attiva se il percorso coincide esattamente, o se e'
                 // una sotto-pagina di quella voce (es. /pannello/qualcosa).
@@ -74,8 +82,8 @@ export function NavBar({ voci, mostraUtenti }: { voci: Voce[]; mostraUtenti: boo
                     aria-current={attiva ? "page" : undefined}
                     className={
                       attiva
-                        ? "rounded-md bg-neutral-900 px-3 py-2.5 text-sm font-medium text-white"
-                        : "rounded-md px-3 py-2.5 text-sm text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 active:bg-neutral-200"
+                        ? `${gruppo.length === 1 ? "rounded-md " : ""}bg-neutral-900 px-3 py-2.5 text-sm font-medium text-white`
+                        : `${gruppo.length === 1 ? "rounded-md " : ""}px-3 py-2.5 text-sm text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 active:bg-neutral-200`
                     }
                   >
                     {voce.label}
