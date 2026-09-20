@@ -9,13 +9,17 @@ import { randomBytes } from "crypto";
 // autorizza l'app a creare/gestire (solo) i file che l'app stessa crea
 // (scope drive.file — non vede il resto del Drive).
 //
-// Punto 23 (18/9): aggiunto anche lo scope di sola lettura sui fogli Google
-// (spreadsheets.readonly), necessario per "Importa incassi" in Prima Nota,
-// che legge il foglio "2026 - Corrispettivi IVA 10%" — un file che Mauro ha
-// creato lui stesso, non l'app, quindi drive.file da solo non basta per
-// vederlo. Aggiungere uno scope nuovo richiede di rifare il login una volta
-// (Google non aggiunge scope a un refresh_token già dato): dopo aver
-// aggiornato questa route, rivisitare /api/auth/google-drive/start da
+// Punto 23 (18/9): aggiunto anche lo scope sui fogli Google, necessario per
+// "Importa incassi" in Prima Nota, che legge il foglio "2026 - Corrispettivi
+// IVA 10%" — un file che Mauro ha creato lui stesso, non l'app, quindi
+// drive.file da solo non basta per vederlo.
+//
+// Punto 23 (20/9): passato da spreadsheets.readonly a spreadsheets (lettura
+// + scrittura), necessario per la pagina Corrispettivi, che scrive i dati
+// del giorno direttamente nelle celle del foglio invece di limitarsi a
+// leggerlo. Aggiungere/allargare uno scope richiede di rifare il login una
+// volta (Google non aggiorna gli scope di un refresh_token già dato): dopo
+// aver aggiornato questa route, rivisitare /api/auth/google-drive/start da
 // loggati e salvare il nuovo GOOGLE_OAUTH_REFRESH_TOKEN su Vercel.
 //
 // Protetta automaticamente dal login del gestionale: non è in
@@ -54,7 +58,7 @@ export async function GET(request: NextRequest) {
   url.searchParams.set("prompt", "consent");
   url.searchParams.set(
     "scope",
-    "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets.readonly"
+    "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets"
   );
   url.searchParams.set("state", state);
 
