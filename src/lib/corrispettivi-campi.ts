@@ -94,14 +94,17 @@ export const CAMPI_CORRISPETTIVI: CampoCorrispettivo[] = [
   },
   { id: "contanti_pagamento", etichetta: "Contanti (pagamento)", tipo: "importo", emoji: "💶" },
   {
+    // Etichetta di riserva, usata solo se il foglio non ha il numero di
+    // conto in intestazione — di norma il campo mostra "Volsk <numero>",
+    // vedi etichettaCampo() in CorrispettiviClient.tsx.
     id: "versamento_1",
-    etichetta: "Versamento conto 1",
+    etichetta: "Volsk",
     tipo: "importo",
     logo: "/loghi-pagamento/volksbank.png",
   },
   {
     id: "versamento_2",
-    etichetta: "Versamento conto 2 (Mutuo)",
+    etichetta: "Volsk (Mutuo)",
     tipo: "importo",
     logo: "/loghi-pagamento/volksbank.png",
   },

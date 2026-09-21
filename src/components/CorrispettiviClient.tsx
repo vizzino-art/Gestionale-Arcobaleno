@@ -99,12 +99,16 @@ export function CorrispettiviClient() {
     };
   }, [data]);
 
+  // Etichette "Volsk ..." richieste da Mauro il 21/9 al posto di "Versamento
+  // conto ...": per il conto 1 resta il numero letto dal foglio ("Volsk
+  // 1318683"), per il conto 2 (il mutuo) è fissa ("Volsk (Mutuo)"), non
+  // prende il testo dal foglio — Mauro l'ha scritta lui così, per esteso.
   function etichettaCampo(campo: CampoCorrispettivo): string {
     if (campo.id === "versamento_1" && etichetteVersamento[0]) {
-      return `Versamento conto ${etichetteVersamento[0]}`;
+      return `Volsk ${etichetteVersamento[0]}`;
     }
-    if (campo.id === "versamento_2" && etichetteVersamento[1]) {
-      return `Versamento conto ${etichetteVersamento[1]}`;
+    if (campo.id === "versamento_2") {
+      return "Volsk (Mutuo)";
     }
     return campo.etichetta;
   }
