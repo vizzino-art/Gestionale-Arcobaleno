@@ -95,6 +95,7 @@ export async function POST(request: NextRequest) {
 
     const dati: { range: string; values: (string | number)[][] }[] = [];
     for (const campo of CAMPI_CORRISPETTIVI) {
+      if (campo.soloLettura) continue; // es. "Cassa": mostrata ma mai scrivibile, è una formula
       if (!(campo.id in valori)) continue; // campo non inviato dal client, non toccarlo
       const col = colonne.perCampo[campo.id];
       if (col === undefined) continue; // questa scheda non ha questa colonna (es. SumUp prima di aprile)

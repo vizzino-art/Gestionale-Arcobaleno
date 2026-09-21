@@ -9,10 +9,29 @@ function oggiIso(): string {
 
 type ValoriForm = Record<string, string>;
 
+// Formatta un importo con due decimali e virgola (stile italiano), usata
+// sia quando arrivano i dati dal foglio sia quando l'utente esce da un
+// campo (onBlur) — richiesto da Mauro il 21/9 ("tutti con due decimali e
+// il simbolo dell'euro"). Se il testo non è un numero valido (es. campo
+// vuoto o l'utente sta ancora scrivendo una virgola a metà) lo lascia
+// invariato, non forza nulla mentre si digita.
+function formattaImporto(grezzo: string): string {
+  const pulito = grezzo.trim();
+  if (pulito === "") return "";
+  const numero = parseFloat(pulito.replace(",", "."));
+  if (isNaN(numero)) return grezzo;
+  return numero.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 // Layout a griglia densa, su richiesta esplicita di Mauro (20/9): "vorrei
 // vedere tutto a colpo d'occhio, quindi nel caso andiamo a capo" — niente
 // ricerca/scroll per trovare un campo, tutti visibili insieme, la griglia
-// va semplicemente a capo su schermi stretti.
+// va semplicemente a capo su schermi stretti. Colori/badge/emoji aggiunti
+// il 21/9 su richiesta di Mauro dopo aver visto la pagina la prima volta:
+// Trasmesso in verde, Non riscosso in rosso, un'etichetta colorata accanto
+// ai metodi di pagamento per riconoscerli a colpo d'occhio (badge scritti a
+// mano, non i loghi ufficiali veri e propri — niente file esterni da
+// scaricare/mantenere).
 export function CorrispettiviClient() {
   const [data, setData] = useState(oggiIso());
   const [valori, setValori] = useState<ValoriForm>({});
@@ -51,7 +70,13 @@ export function CorrispettiviClient() {
           const nuoviValori: ValoriForm = {};
           for (const campo of CAMPI_CORRISPETTIVI) {
             const v = json.valori?.[campo.id];
-            nuoviValori[campo.id] = v === null || v === undefined ? "" : String(v);
+            if (v === null || v === undefined) {
+              nuoviValori[campo.id] = "";
+            } else if (campo.tipo === "importo") {
+              nuoviValori[campo.id] = formattaImporto(String(v));
+            } else {
+              nuoviValori[campo.id] = String(v);
+            }
           }
           setValori(nuoviValori);
           setCampiDisponibili(new Set(json.campiDisponibili ?? CAMPI_CORRISPETTIVI.map((c) => c.id)));
@@ -85,6 +110,7 @@ export function CorrispettiviClient() {
     setMessaggio(null);
     const valoriDaInviare: Record<string, number | null> = {};
     for (const campo of CAMPI_CORRISPETTIVI) {
+      if (campo.soloLettura) continue; // "Cassa": mostrata ma mai inviata, è calcolata dal foglio
       if (!campiDisponibili.has(campo.id)) continue;
       const grezzo = (valori[campo.id] ?? "").trim();
       if (grezzo === "") {
@@ -139,20 +165,59 @@ export function CorrispettiviClient() {
       )}
 
       <div className="mb-4 grid grid-cols-2 gap-3 rounded-lg border border-neutral-200 bg-white p-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-        {CAMPI_CORRISPETTIVI.filter((c) => campiDisponibili.has(c.id)).map((campo) => (
-          <div key={campo.id}>
-            <label className="text-xs text-neutral-500">{etichettaCampo(campo)}</label>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={valori[campo.id] ?? ""}
-              onChange={(e) => setValori((prec) => ({ ...prec, [campo.id]: e.target.value }))}
-              placeholder={campo.tipo === "intero" ? "0" : "0,00"}
-              disabled={caricando}
-              className="mt-0.5 block w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm disabled:opacity-50"
-            />
-          </div>
-        ))}
+        {CAMPI_CORRISPETTIVI.filter((c) => campiDisponibili.has(c.id)).map((campo) => {
+          const labelColore =
+            campo.colore === "verde"
+              ? "text-green-700"
+              : campo.colore === "rosso"
+                ? "text-red-700"
+                : "text-neutral-500";
+          const bordoColore =
+            campo.colore === "verde"
+              ? "border-green-300 focus:border-green-500"
+              : campo.colore === "rosso"
+                ? "border-red-300 focus:border-red-500"
+                : "border-neutral-300";
+          return (
+            <div key={campo.id}>
+              <div className="mb-0.5 flex flex-wrap items-center gap-1">
+                <label className={`text-xs ${labelColore}`}>{etichettaCampo(campo)}</label>
+                {campo.emoji && <span className="text-xs">{campo.emoji}</span>}
+                {campo.badge && (
+                  <span
+                    className={`rounded px-1 py-0.5 text-[9px] font-semibold leading-none ${campo.badge.classe}`}
+                  >
+                    {campo.badge.testo}
+                  </span>
+                )}
+              </div>
+              <div className="relative">
+                {campo.tipo === "importo" && (
+                  <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-sm text-neutral-400">
+                    €
+                  </span>
+                )}
+                <input
+                  type="text"
+                  inputMode={campo.tipo === "importo" ? "decimal" : "numeric"}
+                  value={valori[campo.id] ?? ""}
+                  onChange={(e) => setValori((prec) => ({ ...prec, [campo.id]: e.target.value }))}
+                  onBlur={(e) => {
+                    if (campo.tipo !== "importo") return;
+                    const formattato = formattaImporto(e.target.value);
+                    setValori((prec) => ({ ...prec, [campo.id]: formattato }));
+                  }}
+                  placeholder={campo.tipo === "intero" ? "0" : "0,00"}
+                  disabled={caricando || campo.soloLettura}
+                  readOnly={campo.soloLettura}
+                  className={`mt-0.5 block w-full rounded-md border py-1.5 text-sm disabled:opacity-70 ${bordoColore} ${
+                    campo.tipo === "importo" ? "pl-5 pr-2" : "px-2"
+                  } ${campo.soloLettura ? "bg-neutral-100 text-neutral-500" : ""}`}
+                />
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <button

@@ -153,6 +153,11 @@ export function trovaColonne(righe: string[][]): { colonne: ColonneTrovate | nul
     contanti_pagamento: colContantiPagamento,
     versamento_1: colVersamento1,
     versamento_2: colVersamento2,
+    // "cassa" è mostrata in sola lettura (richiesto da Mauro il 21/9): si
+    // legge come tutti gli altri campi, ma non deve MAI finire tra le
+    // colonne scrivibili — vedi il controllo esplicito su "soloLettura" in
+    // salva/route.ts, questa riga da sola non basterebbe a proteggerla.
+    cassa: colCassa,
   };
   for (const [id, testo] of Object.entries(INTESTAZIONI_TESTO)) {
     const indice = intestazioni.findIndex((c) => norm(c) === testo);
