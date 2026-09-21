@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CAMPI_CORRISPETTIVI, type CampoCorrispettivo } from "@/lib/corrispettivi-campi";
+import { IconaMastercard, IconaVisa } from "@/components/icone-pagamento";
 
 function oggiIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -29,9 +30,12 @@ function formattaImporto(grezzo: string): string {
 // va semplicemente a capo su schermi stretti. Colori/badge/emoji aggiunti
 // il 21/9 su richiesta di Mauro dopo aver visto la pagina la prima volta:
 // Trasmesso in verde, Non riscosso in rosso, un'etichetta colorata accanto
-// ai metodi di pagamento per riconoscerli a colpo d'occhio (badge scritti a
-// mano, non i loghi ufficiali veri e propri — niente file esterni da
-// scaricare/mantenere).
+// ai metodi di pagamento per riconoscerli a colpo d'occhio. Dopo il primo
+// test dal vivo, sempre il 21/9, Mauro ha chiesto di sostituire i badge di
+// testo con i loghi ufficiali veri: fatto per Mastercard/Visa (unici due
+// disponibili con licenza sicura, vedi icone-pagamento.tsx), gli altri
+// restano badge scritti a mano finché non si trova un logo ufficiale
+// scaricabile per ciascuno.
 export function CorrispettiviClient() {
   const [data, setData] = useState(oggiIso());
   const [valori, setValori] = useState<ValoriForm>({});
@@ -183,6 +187,13 @@ export function CorrispettiviClient() {
               <div className="mb-0.5 flex flex-wrap items-center gap-1">
                 <label className={`text-xs ${labelColore}`}>{etichettaCampo(campo)}</label>
                 {campo.emoji && <span className="text-xs">{campo.emoji}</span>}
+                {campo.icona === "mastercard" && <IconaMastercard />}
+                {campo.icona === "visa" && <IconaVisa />}
+                {campo.logo && (
+                  // Icona statica piccola, non serve l'ottimizzazione di next/image (stesso pattern già usato in RegistraBollaClient.tsx)
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={campo.logo} alt={campo.etichetta} className="inline-block h-4 w-auto align-middle" />
+                )}
                 {campo.badge && (
                   <span
                     className={`rounded px-1 py-0.5 text-[9px] font-semibold leading-none ${campo.badge.classe}`}
