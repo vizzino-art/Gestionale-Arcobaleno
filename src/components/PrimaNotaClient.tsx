@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Conto, MovimentoPrimaNota, SaldoConto } from "@/lib/types";
 
@@ -28,6 +28,17 @@ function formattaData(v: string): string {
 
 function oggiIso(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function meseCorrenteIso(): string {
+  return new Date().toISOString().slice(0, 7); // "YYYY-MM"
+}
+
+// Ultimo giorno del mese "YYYY-MM" (gestisce anche i mesi da 28/30/31 giorni).
+function ultimoGiornoMese(meseIso: string): string {
+  const [anno, mese] = meseIso.split("-").map(Number);
+  const ultimo = new Date(anno, mese, 0).getDate();
+  return `${meseIso}-${String(ultimo).padStart(2, "0")}`;
 }
 
 // Più recenti prima; a parità di data, l'ultimo inserito prima.
@@ -60,6 +71,48 @@ export function PrimaNotaClient({ conti, movimentiIniziali, saldiIniziali, daCon
   const [erroreForm, setErroreForm] = useState<string | null>(null);
 
   const contiPerId = new Map(conti.map((c) => [c.id, c]));
+
+  // --- Carta di credito: totale del solo mese scelto, non il saldo di
+  // sempre --------------------------------------------------------------
+  // Richiesto da Mauro il 22/9: il saldo "di sempre" della Carta di
+  // credito non gli è utile (è un numero enorme perché somma tutti i
+  // movimenti mai registrati, senza un "pagamento" che li azzeri come
+  // succede per un vero saldo di conto) — vuole invece poter scegliere un
+  // mese e vedere solo quanto è stato speso/pagato in quel mese (opzione
+  // "A" che ha confermato lui stesso). Per ora solo su questo conto: gli
+  // altri restano il saldo attuale come prima.
+  const contoCartaCreditoId = conti.find((c) => c.nome === "Carta di credito")?.id;
+  const [meseCartaCredito, setMeseCartaCredito] = useState(meseCorrenteIso());
+  const [totaleMeseCarta, setTotaleMeseCarta] = useState<number | null>(null);
+  const [caricandoTotaleCarta, setCaricandoTotaleCarta] = useState(false);
+
+  async function caricaTotaleMeseCarta(meseIso: string) {
+    if (!contoCartaCreditoId) return;
+    setCaricandoTotaleCarta(true);
+    try {
+      const supabase = createClient();
+      const { data: righe, error } = await supabase
+        .from("movimenti_prima_nota")
+        .select("importo")
+        .eq("conto_id", contoCartaCreditoId)
+        .eq("stato", "effettivo")
+        .gte("data", `${meseIso}-01`)
+        .lte("data", ultimoGiornoMese(meseIso));
+      if (!error && righe) {
+        setTotaleMeseCarta(righe.reduce((acc, r) => acc + Number(r.importo), 0));
+      }
+    } finally {
+      setCaricandoTotaleCarta(false);
+    }
+  }
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      caricaTotaleMeseCarta(meseCorrenteIso());
+    }, 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- va eseguito solo al primo caricamento della pagina, i cambi di mese successivi li innesca già l'onChange della tendina
+  }, []);
 
   function applicaDelta(righe: MovimentoPrimaNota[], segno: 1 | -1) {
     setSaldi((prec) =>
@@ -266,17 +319,40 @@ export function PrimaNotaClient({ conti, movimentiIniziali, saldiIniziali, daCon
   return (
     <div>
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {saldi.map((s) => (
-          <div key={s.conto_id} className="rounded-lg border border-neutral-200 bg-white p-3">
-            <p className="text-xs text-neutral-500">{s.conto_nome}</p>
-            <p className={s.saldo_attuale < 0 ? "text-base font-semibold text-red-600" : "text-base font-semibold text-neutral-900"}>
-              {formattaEuro(s.saldo_attuale)}
-            </p>
-            {s.saldo_previsto !== s.saldo_attuale && (
-              <p className="text-xs text-neutral-500">Previsto: {formattaEuro(s.saldo_previsto)}</p>
-            )}
-          </div>
-        ))}
+        {saldi.map((s) => {
+          if (s.conto_nome === "Carta di credito") {
+            const totale = totaleMeseCarta ?? 0;
+            return (
+              <div key={s.conto_id} className="rounded-lg border border-neutral-200 bg-white p-3">
+                <p className="text-xs text-neutral-500">{s.conto_nome}</p>
+                <p className={totale < 0 ? "text-base font-semibold text-red-600" : "text-base font-semibold text-neutral-900"}>
+                  {caricandoTotaleCarta ? "…" : formattaEuro(totale)}
+                </p>
+                <p className="text-xs text-neutral-500">Movimenti del mese</p>
+                <input
+                  type="month"
+                  value={meseCartaCredito}
+                  onChange={(e) => {
+                    setMeseCartaCredito(e.target.value);
+                    caricaTotaleMeseCarta(e.target.value);
+                  }}
+                  className="mt-1 w-full rounded border border-neutral-200 px-1 py-0.5 text-xs text-neutral-600"
+                />
+              </div>
+            );
+          }
+          return (
+            <div key={s.conto_id} className="rounded-lg border border-neutral-200 bg-white p-3">
+              <p className="text-xs text-neutral-500">{s.conto_nome}</p>
+              <p className={s.saldo_attuale < 0 ? "text-base font-semibold text-red-600" : "text-base font-semibold text-neutral-900"}>
+                {formattaEuro(s.saldo_attuale)}
+              </p>
+              {s.saldo_previsto !== s.saldo_attuale && (
+                <p className="text-xs text-neutral-500">Previsto: {formattaEuro(s.saldo_previsto)}</p>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <div className="mb-6 flex flex-wrap items-center gap-2">

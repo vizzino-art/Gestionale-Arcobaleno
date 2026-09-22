@@ -48,7 +48,9 @@ export function CorrispettiviClient() {
   ]);
   const [caricando, setCaricando] = useState(false);
   const [salvando, setSalvando] = useState(false);
-  const [messaggio, setMessaggio] = useState<{ tipo: "ok" | "errore"; testo: string } | null>(null);
+  const [messaggio, setMessaggio] = useState<{ tipo: "ok" | "errore" | "avviso"; testo: string } | null>(
+    null
+  );
 
   // Il setTimeout(..., 0) non è un debounce (qui non serve, il cambio data
   // non è digitazione rapida come in RegistraBollaClient): è solo il modo
@@ -137,8 +139,13 @@ export function CorrispettiviClient() {
       const json = await risposta.json();
       if (!risposta.ok) {
         setMessaggio({ tipo: "errore", testo: json.errore ?? "Errore nel salvataggio" });
+      } else if (json.avvisoPrimaNota) {
+        // Il foglio Google è comunque salvato: questo è solo un avviso sulla
+        // sincronizzazione automatica con Prima Nota (punto 23, 22/9), non
+        // un errore di salvataggio vero e proprio.
+        setMessaggio({ tipo: "avviso", testo: json.avvisoPrimaNota });
       } else {
-        setMessaggio({ tipo: "ok", testo: "Corrispettivi salvati sul foglio Google." });
+        setMessaggio({ tipo: "ok", testo: "Corrispettivi salvati sul foglio Google e su Prima Nota." });
       }
     } catch {
       setMessaggio({ tipo: "errore", testo: "Impossibile contattare il server" });
@@ -165,7 +172,11 @@ export function CorrispettiviClient() {
       {messaggio && (
         <p
           className={`mb-4 rounded-lg p-3 text-sm ${
-            messaggio.tipo === "ok" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+            messaggio.tipo === "ok"
+              ? "bg-green-50 text-green-700"
+              : messaggio.tipo === "avviso"
+                ? "bg-amber-50 text-amber-800"
+                : "bg-red-50 text-red-700"
           }`}
         >
           {messaggio.testo}

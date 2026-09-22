@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
 import { leggiPermessi, puoVedere } from "@/lib/permessi";
 import {
@@ -10,13 +11,38 @@ import {
   trovaColonne,
   trovaRigaData,
 } from "@/lib/corrispettivi";
+import { estraiMovimentiScheda, type MovimentoDaScrivere } from "@/lib/importa-incassi";
 
 // Punto 23 (20/9): scrive i valori inseriti nel form Corrispettivi
 // direttamente nelle celle giuste del foglio Google, senza mai toccare le
 // celle con formula (non sono nemmeno nell'elenco CAMPI_CORRISPETTIVI), e
 // aggiunge una riga al "Log Inserimenti" — stesso log già usato dalla
 // vecchia webapp sull'iPad, mai sovrascritto, sempre in append.
+//
+// Punto 23 (22/9): dopo aver salvato sul foglio, sincronizza in automatico
+// anche Prima Nota, senza che Mauro debba più premere "Importa incassi" a
+// parte — cose diverse:
+// - Incassi (SumUp, Mastercard, Visa, Bancomat, Contanti dell'INCASSO):
+//   stessa identica logica di "Importa incassi" (src/lib/importa-incassi.ts,
+//   condivisa apposta per non rischiare di leggerli in modo diverso), solo
+//   applicata subito e limitata al giorno appena salvato invece che
+//   rileggendo tutto il foglio ogni volta.
+// - Versamenti (Volksbank/Mutuo): creano un trasferimento Cassa → banca in
+//   Prima Nota, così la Cassa lì resta allineata da sola (prima andava
+//   registrato a mano ogni volta, causa di uno scarto scoperto il 22/9).
+// - "Contanti (pagamento)" NON genera nessun movimento: è contante che
+//   resta fisicamente in cassa, non esce da nessuna parte — l'incasso del
+//   giorno lo conta già una volta sola tramite l'import qui sopra.
+// Se questa sincronizzazione fallisce, il salvataggio sul foglio Google
+// (la fonte di verità) resta comunque valido: si segnala solo un "avviso"
+// nella risposta, non si trasforma in un errore che farebbe credere a
+// Mauro che il salvataggio non sia andato a buon fine.
 export const runtime = "nodejs";
+
+const CONTO_VERSAMENTO: Record<string, string> = {
+  versamento_1: "Volksbank",
+  versamento_2: "Mutuo",
+};
 
 type CorpoRichiesta = {
   data?: string;
@@ -125,7 +151,95 @@ export async function POST(request: NextRequest) {
       requestBody: { values: [[timestamp, formattaDataItaliana(dataIso), user.email ?? ""]] },
     });
 
-    return NextResponse.json({ ok: true, scheda, riga: numeroRiga });
+    // Da qui in poi, se qualcosa va storto, il salvataggio sul foglio (già
+    // fatto sopra) resta comunque valido: si raccoglie solo un avviso da
+    // restituire, non si fa fallire la richiesta.
+    let avvisoPrimaNota: string | undefined;
+    try {
+      const { data: conti, error: erroreConti } = await supabase.from("conti").select("id, nome");
+      if (erroreConti || !conti) {
+        throw new Error(erroreConti?.message ?? "impossibile leggere i conti di Prima Nota");
+      }
+      const contoIdPerNome = (nome: string) =>
+        conti.find((c) => c.nome.toLowerCase() === nome.toLowerCase())?.id;
+
+      // Incassi (SumUp/Mastercard/Visa/Bancomat/Contanti): rilegge la
+      // scheda appena scritta (i valori formattati potrebbero differire da
+      // come li ha mandati il client, es. separatori) e riusa la stessa
+      // funzione di "Importa incassi", limitata al solo giorno di oggi.
+      const rilettura = await sheets.spreadsheets.values.get({
+        spreadsheetId: sheetId,
+        range: `'${scheda}'!A1:AF400`,
+        valueRenderOption: "FORMATTED_VALUE",
+      });
+      const righeAggiornate = (rilettura.data.values ?? []) as string[][];
+      const { movimenti: movimentiIncasso, errore: erroreIncasso } = estraiMovimentiScheda(
+        righeAggiornate,
+        contoIdPerNome
+      );
+      if (erroreIncasso) throw new Error(erroreIncasso);
+
+      const movimentiDaScrivere: MovimentoDaScrivere[] = movimentiIncasso.filter(
+        (m) => m.data === dataIso
+      );
+
+      // Versamenti: trasferimento Cassa -> conto di destinazione, usando i
+      // valori appena inviati dal client (già numeri puliti, non serve
+      // rileggerli dal foglio). La causale del conto 1 usa il numero di
+      // conto vero letto dall'intestazione del foglio (colonne.
+      // etichetteVersamento, calcolata a inizio funzione), come fa già il
+      // form in CorrispettiviClient.tsx — il conto 2 resta "Mutuo" fisso,
+      // stessa scelta già fatta lì su richiesta di Mauro il 21/9.
+      const contoCassaId = contoIdPerNome("Cassa");
+      const etichetteCausale: Record<string, string> = {
+        versamento_1: colonne.etichetteVersamento[0]
+          ? `Versamento Volksbank ${colonne.etichetteVersamento[0]}`
+          : "Versamento Volksbank",
+        versamento_2: "Versamento Volksbank (Mutuo)",
+      };
+      for (const [campoId, contoNome] of Object.entries(CONTO_VERSAMENTO)) {
+        const valore = valori[campoId];
+        if (!valore || valore === 0) continue; // niente versamento quel giorno, non creiamo nulla
+        const contoDestinazioneId = contoIdPerNome(contoNome);
+        if (!contoCassaId || !contoDestinazioneId) continue; // conto non trovato, salta senza bloccare il resto
+        const trasferimentoId = randomUUID();
+        const causale = `${etichetteCausale[campoId]} del ${formattaDataItaliana(dataIso)}`;
+        movimentiDaScrivere.push(
+          {
+            chiave_incasso: `${campoId}-uscita-${dataIso}`,
+            data: dataIso,
+            causale,
+            conto_id: contoCassaId,
+            importo: -valore,
+            stato: "effettivo",
+            trasferimento_id: trasferimentoId,
+          },
+          {
+            chiave_incasso: `${campoId}-entrata-${dataIso}`,
+            data: dataIso,
+            causale,
+            conto_id: contoDestinazioneId,
+            importo: valore,
+            stato: "effettivo",
+            trasferimento_id: trasferimentoId,
+          }
+        );
+      }
+
+      if (movimentiDaScrivere.length > 0) {
+        const { error: erroreUpsert } = await supabase
+          .from("movimenti_prima_nota")
+          .upsert(movimentiDaScrivere, { onConflict: "chiave_incasso" });
+        if (erroreUpsert) throw new Error(erroreUpsert.message);
+      }
+    } catch (e) {
+      avvisoPrimaNota =
+        "Salvato sul foglio, ma la sincronizzazione con Prima Nota non è riuscita: " +
+        (e instanceof Error ? e.message : "errore sconosciuto") +
+        ". Puoi comunque premere \"Importa incassi\" in Prima Nota per recuperare gli incassi (i versamenti vanno registrati a mano).";
+    }
+
+    return NextResponse.json({ ok: true, scheda, riga: numeroRiga, avvisoPrimaNota });
   } catch (e) {
     return NextResponse.json(
       { errore: e instanceof Error ? e.message : "Errore sconosciuto durante il salvataggio" },
