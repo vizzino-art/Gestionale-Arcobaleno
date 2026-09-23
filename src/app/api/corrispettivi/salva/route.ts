@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
 import { leggiPermessi, puoVedere } from "@/lib/permessi";
 import {
+  applicaFormatoValuta,
   CAMPI_CORRISPETTIVI,
   clientSheets,
   formattaDataItaliana,
@@ -10,6 +11,7 @@ import {
   schedaPerData,
   trovaColonne,
   trovaRigaData,
+  type CellaValuta,
 } from "@/lib/corrispettivi";
 import { estraiMovimentiScheda, type MovimentoDaScrivere } from "@/lib/importa-incassi";
 
@@ -120,6 +122,7 @@ export async function POST(request: NextRequest) {
     const numeroRiga = rigaTrovataIndex + 1; // Google Sheets è 1-based
 
     const dati: { range: string; values: (string | number)[][] }[] = [];
+    const celleValuta: CellaValuta[] = [];
     for (const campo of CAMPI_CORRISPETTIVI) {
       if (campo.soloLettura) continue; // es. "Cassa": mostrata ma mai scrivibile, è una formula
       if (!(campo.id in valori)) continue; // campo non inviato dal client, non toccarlo
@@ -130,6 +133,9 @@ export async function POST(request: NextRequest) {
         range: `'${scheda}'!${letteraColonna(col)}${numeroRiga}`,
         values: [[valore === null || valore === undefined ? "" : valore]],
       });
+      if (campo.tipo === "importo") {
+        celleValuta.push({ riga: numeroRiga, colonna: col });
+      }
     }
 
     if (dati.length > 0) {
@@ -137,6 +143,17 @@ export async function POST(request: NextRequest) {
         spreadsheetId: sheetId,
         requestBody: { valueInputOption: "RAW", data: dati },
       });
+
+      // Punto 23 (23/9): values.batchUpdate scrive solo il numero, non il
+      // formato — senza questo passaggio le celle nuove restavano in
+      // formato "Automatico" e mostravano "1351,6" invece di "€ 1.351,60"
+      // (segnalato da Mauro). Puramente estetico: se fallisce non blocca il
+      // salvataggio, già andato a buon fine sopra.
+      try {
+        await applicaFormatoValuta(sheets, sheetId, scheda, celleValuta);
+      } catch {
+        // best-effort, vedi commento sopra
+      }
     }
 
     const adesso = new Date();

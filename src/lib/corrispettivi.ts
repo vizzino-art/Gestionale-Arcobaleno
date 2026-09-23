@@ -185,4 +185,80 @@ export function trovaRigaData(righe: string[][], colonne: ColonneTrovate, dataIs
   return -1;
 }
 
+export type CellaValuta = { riga: number; colonna: number }; // riga 1-based (stessa numerazione di Google Sheets), colonna 0-based
+
+// Punto 23 (23/9): values.batchUpdate scrive solo il VALORE della cella,
+// non tocca mai il suo formato — se la cella era ancora in formato
+// "Automatico" (mai formattata prima), il numero appare semplice ("1351,6")
+// invece che come valuta ("€ 1.351,60"), diverso da come apparivano le
+// righe già compilate a mano da Mauro. Per allinearsi esattamente allo
+// stile già in uso nel foglio, si copia il formato numerico dalla stessa
+// colonna nella riga del giorno precedente (che è già formattata bene, sia
+// perché scritta a mano sia perché già passata da qui in un salvataggio
+// precedente); solo se non esiste una riga precedente nella scheda (primo
+// giorno del mese) si usa un formato valuta italiano di riserva. Fallisce
+// in modo silenzioso (non blocca mai il salvataggio, che è già andato a
+// buon fine a questo punto): nel peggiore dei casi la cella resta come
+// numero semplice e si può sistemare risalvando quel giorno.
+export async function applicaFormatoValuta(
+  sheets: ReturnType<typeof clientSheets>,
+  spreadsheetId: string,
+  scheda: string,
+  celle: CellaValuta[]
+): Promise<void> {
+  if (celle.length === 0) return;
+
+  const metadati = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets.properties(sheetId,title)",
+  });
+  const foglio = (metadati.data.sheets ?? []).find((s) => s.properties?.title === scheda);
+  const sheetId = foglio?.properties?.sheetId;
+  if (sheetId === undefined || sheetId === null) return; // scheda non trovata, non c'è nulla da formattare
+
+  const formatoRiserva = { type: "CURRENCY", pattern: "€ #,##0.00" };
+  type FormatoNumero = { type?: string | null; pattern?: string | null };
+  let formatiRiferimento: Record<number, FormatoNumero | undefined> = {};
+
+  const rigaRiferimento = Math.min(...celle.map((c) => c.riga)) - 1;
+  if (rigaRiferimento > 0) {
+    try {
+      const rilettura = await sheets.spreadsheets.get({
+        spreadsheetId,
+        ranges: [`'${scheda}'!${rigaRiferimento}:${rigaRiferimento}`],
+        fields: "sheets.data.rowData.values.userEnteredFormat.numberFormat",
+      });
+      const valoriRiga = rilettura.data.sheets?.[0]?.data?.[0]?.rowData?.[0]?.values ?? [];
+      formatiRiferimento = Object.fromEntries(
+        valoriRiga.map((v, i) => [i, v.userEnteredFormat?.numberFormat as FormatoNumero | undefined] as const)
+      );
+    } catch {
+      // se la rilettura fallisce si usa comunque il formato di riserva sotto, per ogni cella
+    }
+  }
+
+  const richieste = celle.map((cella) => ({
+    repeatCell: {
+      range: {
+        sheetId,
+        startRowIndex: cella.riga - 1,
+        endRowIndex: cella.riga,
+        startColumnIndex: cella.colonna,
+        endColumnIndex: cella.colonna + 1,
+      },
+      cell: {
+        userEnteredFormat: {
+          numberFormat: formatiRiferimento[cella.colonna] ?? formatoRiserva,
+        },
+      },
+      fields: "userEnteredFormat.numberFormat",
+    },
+  }));
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: { requests: richieste },
+  });
+}
+
 export { CAMPI_CORRISPETTIVI };
