@@ -102,7 +102,12 @@ function formattaDataPuntata(v: string): string {
 // Metodi proposti nella tendina; "Altro" apre un campo libero, così Mauro
 // può sempre registrare un metodo nuovo senza dover aspettare che venga
 // aggiunto qui.
-const METODI_PAGAMENTO_PRESET = ["Carta di credito", "SumUp", "Bonifico", "Contanti"];
+// "RID" (23/9, richiesto da Mauro): come "Bonifico", preleva direttamente da
+// uno dei conti bancari (di norma Volksbank, ma non sempre) — non essendo
+// elencato in CONTO_PER_METODO qui sotto, il form chiede sempre da quale
+// conto è partito, esattamente come già succede per Bonifico/Altro, invece
+// di indovinarlo.
+const METODI_PAGAMENTO_PRESET = ["Carta di credito", "SumUp", "Bonifico", "RID", "Contanti"];
 
 const ETICHETTE_MODALITA_PAGAMENTO: Record<string, string> = {
   MP01: "Contanti",
