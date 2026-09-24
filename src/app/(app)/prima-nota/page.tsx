@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { PrimaNotaClient } from "@/components/PrimaNotaClient";
-import type { Conto, MovimentoPrimaNota, SaldoConto } from "@/lib/types";
+import type { Conto, Controparte, MovimentoPrimaNota, SaldoConto } from "@/lib/types";
 
 // Quanti movimenti recenti carichiamo all'apertura della pagina. Basso di
 // proposito: quando arriverà l'importazione dello storico (15.932 righe dal
@@ -22,6 +22,11 @@ export default async function PrimaNotaPage() {
     // ormai "uscito" da quella finestra man mano che si accumulano
     // movimenti più recenti — va cercato a parte, senza limite di quantità.
     { data: daConfermare, error: erroreDaConfermare },
+    // Fase 2 (23/9): solo i nomi, per suggerirli nel campo causale — un
+    // errore qui non deve bloccare il resto della pagina, la lista di
+    // suggerimenti resta semplicemente vuota (il campo causale è comunque
+    // libero, non obbligatorio sceglierne uno).
+    { data: controparti, error: erroreControparti },
   ] = await Promise.all([
     supabase.from("conti").select("*").order("ordine", { ascending: true }),
     supabase
@@ -37,9 +42,13 @@ export default async function PrimaNotaPage() {
       .eq("stato", "pianificato")
       .lte("data", oggiIso)
       .order("data", { ascending: true }),
+    supabase.from("controparti").select("nome").order("nome", { ascending: true }),
   ]);
 
   const errore = erroreConti || erroreMovimenti || erroreSaldi || erroreDaConfermare;
+  if (erroreControparti) {
+    console.error("Errore nel caricamento controparti (solo suggerimenti causale):", erroreControparti.message);
+  }
 
   return (
     <div>
@@ -62,6 +71,7 @@ export default async function PrimaNotaPage() {
           movimentiIniziali={(movimenti ?? []) as MovimentoPrimaNota[]}
           saldiIniziali={(saldi ?? []) as SaldoConto[]}
           daConfermareIniziali={(daConfermare ?? []) as MovimentoPrimaNota[]}
+          contropartiIniziali={(controparti ?? []) as Controparte[]}
         />
       )}
     </div>

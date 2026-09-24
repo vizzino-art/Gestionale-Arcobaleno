@@ -99,6 +99,17 @@ export type Conto = {
   ordine: number;
 };
 
+// Punto 23 (23/9, Fase 2 Prima Nota): anagrafica di TUTTE le controparti a
+// cui è stato fatto un pagamento nel tempo (elettricisti, assicurazioni,
+// utenze...), separata da "fornitori" che resta solo per chi fornisce
+// prodotti da ordinare. Per ora serve solo a suggerire il nome nel campo
+// causale di Prima Nota (vedi PrimaNotaClient.tsx), quindi qui si legge
+// solo "nome" — gli altri campi (IBAN/P.IVA/SDI/indirizzo) restano in
+// tabella per un uso futuro, non ancora mostrati in nessuna pagina.
+export type Controparte = {
+  nome: string;
+};
+
 export type MovimentoPrimaNota = {
   id: string;
   data: string;

@@ -2,13 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { Conto, MovimentoPrimaNota, SaldoConto } from "@/lib/types";
+import type { Conto, Controparte, MovimentoPrimaNota, SaldoConto } from "@/lib/types";
 
 type Props = {
   conti: Conto[];
   movimentiIniziali: MovimentoPrimaNota[];
   saldiIniziali: SaldoConto[];
   daConfermareIniziali: MovimentoPrimaNota[];
+  // Fase 2 (23/9): nomi dell'anagrafica controparti, solo per suggerirli nel
+  // campo causale — vedi CAUSALI_SUGGERITE più sotto.
+  contropartiIniziali: Controparte[];
 };
 
 // Causali ricorrenti viste nel vecchio file Excel: suggerite nel campo
@@ -47,8 +50,24 @@ function comparaMovimenti(a: MovimentoPrimaNota, b: MovimentoPrimaNota): number 
   return a.created_at < b.created_at ? 1 : -1;
 }
 
-export function PrimaNotaClient({ conti, movimentiIniziali, saldiIniziali, daConfermareIniziali }: Props) {
+export function PrimaNotaClient({
+  conti,
+  movimentiIniziali,
+  saldiIniziali,
+  daConfermareIniziali,
+  contropartiIniziali,
+}: Props) {
   const primoContoId = conti[0]?.id ?? "";
+
+  // Suggerimenti per il campo causale: le causali ricorrenti fisse più i
+  // nomi delle controparti (Fase 2), senza doppioni se un nome coincidesse
+  // con una causale già in elenco.
+  const suggerimentiCausale = [
+    ...CAUSALI_SUGGERITE,
+    ...contropartiIniziali
+      .map((c) => c.nome)
+      .filter((nome) => !CAUSALI_SUGGERITE.includes(nome)),
+  ];
 
   const [movimenti, setMovimenti] = useState<MovimentoPrimaNota[]>(
     [...movimentiIniziali].sort(comparaMovimenti)
@@ -433,7 +452,7 @@ export function PrimaNotaClient({ conti, movimentiIniziali, saldiIniziali, daCon
               className="mt-0.5 block w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
             />
             <datalist id="causali-suggerite">
-              {CAUSALI_SUGGERITE.map((c) => (
+              {suggerimentiCausale.map((c) => (
                 <option key={c} value={c} />
               ))}
             </datalist>
