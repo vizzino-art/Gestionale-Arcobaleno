@@ -335,8 +335,18 @@ export function PrimaNotaClient({
     }
   }
 
+  // Liquidità totale: somma dei saldi attuali di tutti i conti tranne la
+  // Carta di credito (che è un debito/spesa, non liquidità disponibile).
+  const liquiditaTotale = saldi
+    .filter((s) => s.conto_nome !== "Carta di credito")
+    .reduce((acc, s) => acc + s.saldo_attuale, 0);
+
   return (
     <div>
+      <div className="mb-3 rounded-lg border border-neutral-900 bg-neutral-900 p-3 text-white">
+        <p className="text-xs text-neutral-300">Liquidità totale (Volksbank + Trento + Sumup + Cassa + Mutuo)</p>
+        <p className="text-xl font-semibold">{formattaEuro(liquiditaTotale)}</p>
+      </div>
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {saldi.map((s) => {
           if (s.conto_nome === "Carta di credito") {
