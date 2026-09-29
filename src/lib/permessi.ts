@@ -17,7 +17,8 @@ export type PaginaId =
   | "storico-bolle"
   | "registro-fatture"
   | "prima-nota"
-  | "corrispettivi";
+  | "corrispettivi"
+  | "ditte";
 
 export const PAGINE: { id: PaginaId; href: string; label: string }[] = [
   { id: "fornitori", href: "/fornitori", label: "Fornitori" },
@@ -30,6 +31,7 @@ export const PAGINE: { id: PaginaId; href: string; label: string }[] = [
   { id: "registro-fatture", href: "/registro-fatture", label: "Registro Fatture" },
   { id: "prima-nota", href: "/prima-nota", label: "Prima Nota" },
   { id: "corrispettivi", href: "/corrispettivi", label: "Corrispettivi" },
+  { id: "ditte", href: "/ditte", label: "Ditte" },
 ];
 
 export type Permessi = {

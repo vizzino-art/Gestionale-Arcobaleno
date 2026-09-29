@@ -11,7 +11,7 @@ type Props = {
   daConfermareIniziali: MovimentoPrimaNota[];
   // Fase 2 (23/9): nomi dell'anagrafica controparti, solo per suggerirli nel
   // campo causale — vedi CAUSALI_SUGGERITE più sotto.
-  contropartiIniziali: Controparte[];
+  contropartiIniziali: Pick<Controparte, "nome">[];
 };
 
 // Causali ricorrenti viste nel vecchio file Excel: suggerite nel campo

@@ -14,7 +14,7 @@ type Voce = { href: string; label: string };
 // sue voci affiancate alla stessa altezza — nessun buco, e quando non
 // c'entrano tutte su una riga la pillola va a capo intera, mai spezzata.
 const GRUPPI: string[][] = [
-  ["/fornitori"],
+  ["/fornitori", "/ditte"],
   ["/ordina", "/riepilogo"],
   ["/pannello", "/confronta"],
   ["/registra-bolla", "/storico-bolle", "/registro-fatture"],

@@ -71,7 +71,7 @@ export default async function PrimaNotaPage() {
           movimentiIniziali={(movimenti ?? []) as MovimentoPrimaNota[]}
           saldiIniziali={(saldi ?? []) as SaldoConto[]}
           daConfermareIniziali={(daConfermare ?? []) as MovimentoPrimaNota[]}
-          contropartiIniziali={(controparti ?? []) as Controparte[]}
+          contropartiIniziali={(controparti ?? []) as Pick<Controparte, "nome">[]}
         />
       )}
     </div>
