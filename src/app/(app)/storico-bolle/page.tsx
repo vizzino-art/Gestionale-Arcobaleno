@@ -1,35 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
-
-// Righe come tornano da Supabase con i join su prodotti/fornitori (nomi già
-// risolti, non solo gli id) — tipizzate qui perché usate solo in questa
-// pagina, sullo stesso pattern di altre viste con join in questo progetto.
-type RigaStoricoConNomi = {
-  id: string;
-  data: string;
-  numero_fattura: string | null;
-  prezzo: number;
-  quantita: number | null;
-  fornitore_id: string;
-  prodotti: { descrizione: string; um: string | null } | null;
-  fornitori: { nome: string } | null;
-};
-
-type RigaBolla = {
-  id: string;
-  descrizione: string;
-  um: string | null;
-  quantita: number | null;
-  prezzo: number;
-};
-
-type Bolla = {
-  chiave: string;
-  fornitoreId: string;
-  fornitoreNome: string;
-  numeroDdt: string;
-  data: string;
-  righe: RigaBolla[];
-};
+import { StoricoBolleClient } from "@/components/StoricoBolleClient";
+import { raggruppaBolle, normalizzaRiferimento, type RigaBollaGrezza } from "@/lib/bolle";
 
 // Riga di fattura elettronica collegata a un DDT (join su fatture_ricevute
 // per sapere fornitore/numero/data della fattura che la contiene) — usata
@@ -47,34 +18,12 @@ type FatturaMinima = {
   data: string;
 };
 
-function formattaData(iso: string) {
-  return new Date(iso).toLocaleDateString("it-IT", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-}
-
-// Riduce un riferimento (numero DDT o numero fattura) a un formato
-// confrontabile — serve a riconoscere che "H4/32016" (DDT letto dalla
-// bolla) e "H4 000032016" (numero della fattura elettronica corrispondente)
-// sono lo stesso documento. Capita spesso con fornitori tipo supermercato
-// (Unicomm, Tosano...) la cui fattura elettronica non riporta affatto un
-// DDT collegato in modo strutturato: il "DDT" che Mauro legge sulla carta è
-// di fatto lo stesso numero del documento, solo scritto in modo diverso.
-// Importante: spezza la stringa nei singoli pezzi separati da spazi/barre/
-// trattini PRIMA di togliere gli zeri iniziali di ciascun pezzo numerico —
-// se si ripulisse tutto insieme, "H4" e "32016" si incollerebbero in un
-// unico blocco "432016" e gli zeri di "000032016" non sarebbero più
-// riconoscibili come "iniziali".
-function normalizzaRiferimento(s: string): string {
-  return s
-    .toUpperCase()
-    .split(/[^A-Z0-9]+/)
-    .filter((pezzo) => pezzo.length > 0)
-    .map((pezzo) => (/^\d+$/.test(pezzo) ? pezzo.replace(/^0+(?=\d)/, "") : pezzo))
-    .join("-");
-}
+type CollegamentoManuale = {
+  fornitore_id: string;
+  numero_ddt: string;
+  data_ddt: string;
+  fatture_ricevute: { numero: string; data: string } | null;
+};
 
 export default async function StoricoBollePage() {
   const supabase = await createClient();
@@ -94,46 +43,23 @@ export default async function StoricoBollePage() {
     .order("created_at", { ascending: false })
     .limit(500);
 
-  const righe = (data ?? []) as unknown as RigaStoricoConNomi[];
-
-  const bolle: Bolla[] = [];
-  const indice = new Map<string, Bolla>();
-  for (const r of righe) {
-    const fornitoreNome = r.fornitori?.nome ?? "—";
-    const numeroDdt = r.numero_fattura ?? "—";
-    const chiave = `${fornitoreNome}__${numeroDdt}__${r.data}`;
-    let b = indice.get(chiave);
-    if (!b) {
-      b = { chiave, fornitoreId: r.fornitore_id, fornitoreNome, numeroDdt, data: r.data, righe: [] };
-      indice.set(chiave, b);
-      bolle.push(b);
-    }
-    b.righe.push({
-      id: r.id,
-      descrizione: r.prodotti?.descrizione ?? "Prodotto eliminato",
-      um: r.prodotti?.um ?? null,
-      quantita: r.quantita,
-      prezzo: r.prezzo,
-    });
-  }
+  const righe = (data ?? []) as unknown as RigaBollaGrezza[];
+  const bolle = raggruppaBolle(righe);
 
   // Per ogni bolla, verifica se esiste già una fattura elettronica registrata
   // (Registro Fatture) con lo stesso fornitore e lo stesso numero DDT tra le
-  // sue righe — solo un'indicazione visiva calcolata al volo, nessuna
-  // scrittura nel database. Non c'è nessun rischio di doppio conteggio nei
-  // prezzi: questa pagina e Registro Fatture leggono/scrivono tabelle
-  // separate (storico_prezzi_fatture per le bolle, fatture_ricevute /
-  // righe_fatture_ricevute per le fatture), questo indicatore serve solo a
-  // vederlo a colpo d'occhio.
+  // sue righe, o se Mauro l'ha collegata a mano da Registro Fatture — solo
+  // un'indicazione visiva, nessuna scrittura nel database da questa pagina.
+  // Non c'è nessun rischio di doppio conteggio nei prezzi: questa pagina e
+  // Registro Fatture leggono/scrivono tabelle separate (storico_prezzi_fatture
+  // per le bolle, fatture_ricevute / righe_fatture_ricevute per le fatture),
+  // questo indicatore serve solo a vederlo a colpo d'occhio.
   const numeriDdtRaw = Array.from(
-    new Set(
-      bolle
-        .map((b) => b.numeroDdt.replace(/^DDT\s+/i, "").trim())
-        .filter((n) => n.length > 0 && n !== "—")
-    )
+    new Set(bolle.map((b) => b.numeroDdtRaw).filter((n) => n !== "—"))
   );
 
-  const fattureIndice = new Map<string, { numero: string; data: string }>();
+  const fattureAutomatiche: Record<string, { numero: string; data: string }> = {};
+
   if (numeriDdtRaw.length > 0) {
     const { data: righeFatture } = await supabase
       .from("righe_fatture_ricevute")
@@ -144,8 +70,8 @@ export default async function StoricoBollePage() {
       const fattura = r.fatture_ricevute;
       if (!r.ddt_numero || !fattura?.fornitore_id) continue;
       const chiave = `${fattura.fornitore_id}__${r.ddt_numero}`;
-      if (!fattureIndice.has(chiave)) {
-        fattureIndice.set(chiave, { numero: fattura.numero, data: fattura.data });
+      if (!fattureAutomatiche[chiave]) {
+        fattureAutomatiche[chiave] = { numero: fattura.numero, data: fattura.data };
       }
     }
   }
@@ -156,7 +82,6 @@ export default async function StoricoBollePage() {
   // loro. In questo caso confrontiamo il numero DDT della bolla con il
   // numero stesso della fattura (normalizzato), che per questi fornitori è
   // di fatto lo stesso riferimento scritto in modo leggermente diverso.
-  const fattureIndicePerNumero = new Map<string, { numero: string; data: string }>();
   const fornitoreIds = Array.from(new Set(bolle.map((b) => b.fornitoreId)));
   if (fornitoreIds.length > 0) {
     const { data: fatture } = await supabase
@@ -164,6 +89,7 @@ export default async function StoricoBollePage() {
       .select("fornitore_id, numero, data")
       .in("fornitore_id", fornitoreIds);
 
+    const fattureIndicePerNumero = new Map<string, { numero: string; data: string }>();
     for (const f of (fatture ?? []) as unknown as FatturaMinima[]) {
       if (!f.fornitore_id) continue;
       const chiave = `${f.fornitore_id}__${normalizzaRiferimento(f.numero)}`;
@@ -171,6 +97,31 @@ export default async function StoricoBollePage() {
         fattureIndicePerNumero.set(chiave, { numero: f.numero, data: f.data });
       }
     }
+
+    for (const numeroDdtRaw of numeriDdtRaw) {
+      // Applicato per ogni fornitore che ha almeno una bolla con questo DDT
+      for (const fornitoreId of fornitoreIds) {
+        const chiaveAutomatica = `${fornitoreId}__${numeroDdtRaw}`;
+        if (fattureAutomatiche[chiaveAutomatica]) continue; // già trovata col DDT esatto
+        const trovata = fattureIndicePerNumero.get(
+          `${fornitoreId}__${normalizzaRiferimento(numeroDdtRaw)}`
+        );
+        if (trovata) fattureAutomatiche[chiaveAutomatica] = trovata;
+      }
+    }
+  }
+
+  // Collegamenti scelti a mano da Mauro in Registro Fatture — hanno sempre
+  // la precedenza sull'abbinamento automatico sopra.
+  const collegamentiManuali: Record<string, { numero: string; data: string }> = {};
+  const { data: collegamenti } = await supabase
+    .from("collegamenti_bolla_fattura")
+    .select("fornitore_id, numero_ddt, data_ddt, fatture_ricevute(numero, data)");
+
+  for (const c of (collegamenti ?? []) as unknown as CollegamentoManuale[]) {
+    if (!c.fatture_ricevute) continue;
+    const chiave = `${c.fornitore_id}__${c.numero_ddt}__${c.data_ddt}`;
+    collegamentiManuali[chiave] = { numero: c.fatture_ricevute.numero, data: c.fatture_ricevute.data };
   }
 
   return (
@@ -179,8 +130,10 @@ export default async function StoricoBollePage() {
       <p className="mb-4 text-sm text-neutral-500">
         Le bolle registrate con &quot;Registra bolla&quot;, più recenti in cima — utile per il
         controllo di fine mese con la fattura riepilogativa del fornitore. Ogni bolla mostra se è
-        già stata abbinata a una fattura elettronica registrata in Registro Fatture (stesso
-        fornitore e numero DDT) oppure se è ancora in attesa. Ultime {righe.length} righe.
+        già stata abbinata a una fattura elettronica registrata in Registro Fatture (in automatico
+        o collegata a mano) oppure se è ancora in attesa. Usa la matita ✏️ su una riga per
+        correggere un prezzo o una quantità letti male dalla scansione — non aggiorna mai il
+        listino del prodotto. Ultime {righe.length} righe.
       </p>
 
       {error && (
@@ -195,57 +148,13 @@ export default async function StoricoBollePage() {
         </p>
       )}
 
-      <div className="space-y-3">
-        {bolle.map((b) => {
-          const totale = b.righe.reduce((s, r) => s + r.prezzo * (r.quantita ?? 1), 0);
-          const numeroDdtRaw = b.numeroDdt.replace(/^DDT\s+/i, "").trim();
-          const fatturata =
-            fattureIndice.get(`${b.fornitoreId}__${numeroDdtRaw}`) ??
-            fattureIndicePerNumero.get(`${b.fornitoreId}__${normalizzaRiferimento(numeroDdtRaw)}`) ??
-            null;
-          return (
-            <details
-              key={b.chiave}
-              className="rounded-xl border border-neutral-200 bg-white p-4"
-              open
-            >
-              <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 text-sm font-medium text-neutral-900">
-                <span>
-                  {b.fornitoreNome} — {b.numeroDdt} — {formattaData(b.data)}
-                </span>
-                <span className="flex shrink-0 flex-wrap items-center gap-2">
-                  {fatturata ? (
-                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                      📄 Fatturata — {fatturata.numero} del {formattaData(fatturata.data)}
-                    </span>
-                  ) : (
-                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
-                      ⏳ In attesa di fattura
-                    </span>
-                  )}
-                  <span className="text-neutral-500">
-                    {b.righe.length} {b.righe.length === 1 ? "riga" : "righe"} · €{totale.toFixed(2)}
-                  </span>
-                </span>
-              </summary>
-              <div className="mt-3 divide-y divide-neutral-100">
-                {b.righe.map((r) => (
-                  <div
-                    key={r.id}
-                    className="flex items-center justify-between gap-3 py-1.5 text-sm"
-                  >
-                    <span className="text-neutral-700">{r.descrizione}</span>
-                    <span className="shrink-0 text-neutral-500">
-                      {r.quantita != null ? `${r.quantita} ${r.um ?? ""} × ` : ""}€
-                      {r.prezzo.toFixed(2)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </details>
-          );
-        })}
-      </div>
+      {!error && bolle.length > 0 && (
+        <StoricoBolleClient
+          bolle={bolle}
+          fattureAutomatiche={fattureAutomatiche}
+          collegamentiManuali={collegamentiManuali}
+        />
+      )}
     </div>
   );
 }

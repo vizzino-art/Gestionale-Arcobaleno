@@ -3,11 +3,26 @@
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Conto, Fornitore } from "@/lib/types";
+import type { Bolla } from "@/lib/bolle";
+
+// Collegamento manuale bolla -> fattura (tabella collegamenti_bolla_fattura,
+// vedi src/lib/bolle.ts) — per i casi in cui il confronto automatico che
+// gira in Storico bolle non riesce ad abbinarli da solo (numeri DDT scritti
+// in modo troppo diverso da quello della fattura).
+export type CollegamentoBolla = {
+  id: string;
+  fornitore_id: string;
+  numero_ddt: string;
+  data_ddt: string;
+  fattura_id: string;
+};
 
 type Props = {
   fornitori: Fornitore[];
   fattureIniziali: FatturaSalvata[];
   conti: Conto[];
+  bolle: Bolla[];
+  collegamentiIniziali: CollegamentoBolla[];
 };
 
 type RigaEstratta = {
@@ -474,7 +489,13 @@ function FormPagamentoRata({
   );
 }
 
-export function RegistroFattureClient({ fornitori, fattureIniziali, conti }: Props) {
+export function RegistroFattureClient({
+  fornitori,
+  fattureIniziali,
+  conti,
+  bolle,
+  collegamentiIniziali,
+}: Props) {
   const [caricamento, setCaricamento] = useState(false);
   const [errore, setErrore] = useState<string | null>(null);
   const [estratta, setEstratta] = useState<FatturaEstratta | null>(null);
@@ -574,6 +595,55 @@ export function RegistroFattureClient({ fornitori, fattureIniziali, conti }: Pro
     } finally {
       setConfrontoInCorso((prec) => ({ ...prec, [f.id]: false }));
     }
+  }
+
+  // Collegamento manuale bolla -> fattura, per quando il confronto
+  // automatico (Storico bolle) non riesce ad abbinarli da solo. Scelta di
+  // Mauro: si collega da qui, dal lato fattura — scegliendo tra le bolle
+  // non ancora collegate dello stesso fornitore.
+  const [collegamenti, setCollegamenti] = useState<CollegamentoBolla[]>(collegamentiIniziali);
+  const [bollaSelezionata, setBollaSelezionata] = useState<Record<string, string>>({});
+  const [collegamentoInCorso, setCollegamentoInCorso] = useState<Record<string, boolean>>({});
+  const [collegamentoErrore, setCollegamentoErrore] = useState<Record<string, string>>({});
+
+  async function collegaBolla(f: FatturaSalvata, bolla: Bolla) {
+    setCollegamentoErrore((prec) => ({ ...prec, [f.id]: "" }));
+    setCollegamentoInCorso((prec) => ({ ...prec, [f.id]: true }));
+    try {
+      const supabase = createClient();
+      const { data: inserito, error } = await supabase
+        .from("collegamenti_bolla_fattura")
+        .insert({
+          fornitore_id: bolla.fornitoreId,
+          numero_ddt: bolla.numeroDdtRaw,
+          data_ddt: bolla.data,
+          fattura_id: f.id,
+        })
+        .select("id, fornitore_id, numero_ddt, data_ddt, fattura_id")
+        .single();
+      if (error || !inserito) {
+        setCollegamentoErrore((prec) => ({
+          ...prec,
+          [f.id]: `Errore nel collegamento: ${error?.message ?? "sconosciuto"}`,
+        }));
+        return;
+      }
+      setCollegamenti((prec) => [...prec, inserito as CollegamentoBolla]);
+      setBollaSelezionata((prec) => ({ ...prec, [f.id]: "" }));
+    } finally {
+      setCollegamentoInCorso((prec) => ({ ...prec, [f.id]: false }));
+    }
+  }
+
+  async function scollegaBolla(fatturaId: string, collegamentoId: string) {
+    setCollegamentoErrore((prec) => ({ ...prec, [fatturaId]: "" }));
+    const supabase = createClient();
+    const { error } = await supabase.from("collegamenti_bolla_fattura").delete().eq("id", collegamentoId);
+    if (error) {
+      setCollegamentoErrore((prec) => ({ ...prec, [fatturaId]: `Errore: ${error.message}` }));
+      return;
+    }
+    setCollegamenti((prec) => prec.filter((c) => c.id !== collegamentoId));
   }
 
   async function gestisciCaricamento(file: File) {
@@ -1057,6 +1127,108 @@ export function RegistroFattureClient({ fornitori, fattureIniziali, conti }: Pro
                     ))}
                   </div>
                 )}
+
+                <div className="mt-3 border-t border-neutral-100 pt-3">
+                  <p className="mb-2 text-xs font-medium text-neutral-500">🔗 Bolle collegate</p>
+                  {(() => {
+                    const collegateAFattura = collegamenti.filter((c) => c.fattura_id === f.id);
+                    return (
+                      <div className="space-y-1">
+                        {collegateAFattura.length === 0 && (
+                          <p className="text-xs text-neutral-500">
+                            Nessuna bolla collegata a mano a questa fattura — se il confronto in Storico
+                            bolle non l&apos;ha già trovata da solo, collegala qui sotto.
+                          </p>
+                        )}
+                        {collegateAFattura.map((c) => {
+                          const bolla = bolle.find(
+                            (b) =>
+                              b.fornitoreId === c.fornitore_id &&
+                              b.numeroDdtRaw === c.numero_ddt &&
+                              b.data === c.data_ddt
+                          );
+                          const totaleBolla = bolla
+                            ? bolla.righe.reduce((s, r) => s + r.prezzo * (r.quantita ?? 1), 0)
+                            : null;
+                          return (
+                            <div
+                              key={c.id}
+                              className="flex items-center justify-between gap-2 rounded-md border border-emerald-100 bg-emerald-50 px-2 py-1 text-xs text-emerald-800"
+                            >
+                              <span>
+                                DDT {c.numero_ddt} del {formattaData(c.data_ddt)}
+                                {bolla
+                                  ? ` — ${bolla.righe.length} ${bolla.righe.length === 1 ? "riga" : "righe"} · ${formattaEuro(totaleBolla)}`
+                                  : ""}
+                              </span>
+                              <button
+                                onClick={() => scollegaBolla(f.id, c.id)}
+                                className="text-emerald-700 hover:text-emerald-900"
+                                title="Scollega"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+
+                  {!f.fornitore_id && (
+                    <p className="mt-1 text-xs text-neutral-500">
+                      Abbina questa fattura a un fornitore a sistema per poter collegare le sue bolle.
+                    </p>
+                  )}
+
+                  {f.fornitore_id &&
+                    (() => {
+                      const nonCollegate = bolle.filter(
+                        (b) =>
+                          b.fornitoreId === f.fornitore_id &&
+                          !collegamenti.some(
+                            (c) =>
+                              c.fornitore_id === b.fornitoreId &&
+                              c.numero_ddt === b.numeroDdtRaw &&
+                              c.data_ddt === b.data
+                          )
+                      );
+                      if (nonCollegate.length === 0) return null;
+                      return (
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <select
+                            value={bollaSelezionata[f.id] ?? ""}
+                            onChange={(e) =>
+                              setBollaSelezionata((prec) => ({ ...prec, [f.id]: e.target.value }))
+                            }
+                            className="rounded-md border border-neutral-300 px-2 py-1 text-xs"
+                          >
+                            <option value="">— collega una bolla di questo fornitore —</option>
+                            {nonCollegate.map((b) => (
+                              <option key={b.chiave} value={b.chiave}>
+                                DDT {b.numeroDdtRaw} del {formattaData(b.data)} — {b.righe.length}{" "}
+                                {b.righe.length === 1 ? "riga" : "righe"}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={() => {
+                              const bolla = nonCollegate.find((b) => b.chiave === bollaSelezionata[f.id]);
+                              if (bolla) collegaBolla(f, bolla);
+                            }}
+                            disabled={!bollaSelezionata[f.id] || collegamentoInCorso[f.id]}
+                            className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                          >
+                            {collegamentoInCorso[f.id] ? "Collego…" : "Collega"}
+                          </button>
+                        </div>
+                      );
+                    })()}
+
+                  {collegamentoErrore[f.id] && (
+                    <p className="mt-1 text-xs text-red-700">{collegamentoErrore[f.id]}</p>
+                  )}
+                </div>
 
                 <div className="mt-3 border-t border-neutral-100 pt-3">
                   <button

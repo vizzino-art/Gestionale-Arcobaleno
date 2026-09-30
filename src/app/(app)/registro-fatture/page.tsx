@@ -1,5 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
-import { RegistroFattureClient, type FatturaSalvata } from "@/components/RegistroFattureClient";
+import {
+  RegistroFattureClient,
+  type CollegamentoBolla,
+  type FatturaSalvata,
+} from "@/components/RegistroFattureClient";
+import { raggruppaBolle, type RigaBollaGrezza } from "@/lib/bolle";
 import type { Conto, Fornitore } from "@/lib/types";
 
 export default async function RegistroFatturePage() {
@@ -9,6 +14,8 @@ export default async function RegistroFatturePage() {
     { data: fornitori, error: erroreFornitori },
     { data: fatture, error: erroreFatture },
     { data: conti, error: erroreConti },
+    { data: righeBolle, error: erroreBolle },
+    { data: collegamenti, error: erroreCollegamenti },
   ] = await Promise.all([
     supabase.from("fornitori").select("*").order("nome", { ascending: true }),
     supabase
@@ -22,9 +29,17 @@ export default async function RegistroFatturePage() {
       .order("numero_linea", { foreignTable: "righe_fatture_ricevute", ascending: true })
       .order("numero_rata", { foreignTable: "rate_pagamento_fatture", ascending: true }),
     supabase.from("conti").select("*").order("ordine", { ascending: true }),
+    // Bolle (da "Registra bolla"), per il collegamento manuale a una
+    // fattura quando il confronto automatico in Storico bolle non basta.
+    supabase
+      .from("storico_prezzi_fatture")
+      .select("id, data, numero_fattura, prezzo, quantita, fornitore_id, prodotti(descrizione, um)")
+      .like("numero_fattura", "DDT %")
+      .order("data", { ascending: false }),
+    supabase.from("collegamenti_bolla_fattura").select("id, fornitore_id, numero_ddt, data_ddt, fattura_id"),
   ]);
 
-  const errore = erroreFornitori || erroreFatture || erroreConti;
+  const errore = erroreFornitori || erroreFatture || erroreConti || erroreBolle || erroreCollegamenti;
 
   return (
     <div>
@@ -45,6 +60,8 @@ export default async function RegistroFatturePage() {
           fornitori={(fornitori ?? []) as Fornitore[]}
           fattureIniziali={(fatture ?? []) as unknown as FatturaSalvata[]}
           conti={(conti ?? []) as Conto[]}
+          bolle={raggruppaBolle((righeBolle ?? []) as unknown as RigaBollaGrezza[])}
+          collegamentiIniziali={(collegamenti ?? []) as CollegamentoBolla[]}
         />
       )}
     </div>
