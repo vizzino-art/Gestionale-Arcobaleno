@@ -55,19 +55,25 @@ function formattaData(iso: string) {
   });
 }
 
-// Riduce un riferimento (numero DDT o numero fattura) a sole lettere/cifre
-// maiuscole, togliendo gli zeri iniziali di ogni blocco di cifre — serve a
-// riconoscere che "H4/32016" (DDT letto dalla bolla) e "H4 000032016"
-// (numero della fattura elettronica corrispondente) sono lo stesso
-// documento. Capita spesso con fornitori tipo supermercato (Unicomm,
-// Tosano...) la cui fattura elettronica non riporta affatto un DDT
-// collegato in modo strutturato: il "DDT" che Mauro legge sulla carta è di
-// fatto lo stesso numero del documento, solo scritto in modo diverso.
+// Riduce un riferimento (numero DDT o numero fattura) a un formato
+// confrontabile — serve a riconoscere che "H4/32016" (DDT letto dalla
+// bolla) e "H4 000032016" (numero della fattura elettronica corrispondente)
+// sono lo stesso documento. Capita spesso con fornitori tipo supermercato
+// (Unicomm, Tosano...) la cui fattura elettronica non riporta affatto un
+// DDT collegato in modo strutturato: il "DDT" che Mauro legge sulla carta è
+// di fatto lo stesso numero del documento, solo scritto in modo diverso.
+// Importante: spezza la stringa nei singoli pezzi separati da spazi/barre/
+// trattini PRIMA di togliere gli zeri iniziali di ciascun pezzo numerico —
+// se si ripulisse tutto insieme, "H4" e "32016" si incollerebbero in un
+// unico blocco "432016" e gli zeri di "000032016" non sarebbero più
+// riconoscibili come "iniziali".
 function normalizzaRiferimento(s: string): string {
   return s
     .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "")
-    .replace(/\d+/g, (blocco) => blocco.replace(/^0+(?=\d)/, ""));
+    .split(/[^A-Z0-9]+/)
+    .filter((pezzo) => pezzo.length > 0)
+    .map((pezzo) => (/^\d+$/.test(pezzo) ? pezzo.replace(/^0+(?=\d)/, "") : pezzo))
+    .join("-");
 }
 
 export default async function StoricoBollePage() {
