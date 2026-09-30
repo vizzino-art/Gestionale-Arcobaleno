@@ -41,12 +41,33 @@ type RigaFatturaConDdt = {
   fatture_ricevute: { fornitore_id: string | null; numero: string; data: string } | null;
 };
 
+type FatturaMinima = {
+  fornitore_id: string | null;
+  numero: string;
+  data: string;
+};
+
 function formattaData(iso: string) {
   return new Date(iso).toLocaleDateString("it-IT", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
   });
+}
+
+// Riduce un riferimento (numero DDT o numero fattura) a sole lettere/cifre
+// maiuscole, togliendo gli zeri iniziali di ogni blocco di cifre — serve a
+// riconoscere che "H4/32016" (DDT letto dalla bolla) e "H4 000032016"
+// (numero della fattura elettronica corrispondente) sono lo stesso
+// documento. Capita spesso con fornitori tipo supermercato (Unicomm,
+// Tosano...) la cui fattura elettronica non riporta affatto un DDT
+// collegato in modo strutturato: il "DDT" che Mauro legge sulla carta è di
+// fatto lo stesso numero del documento, solo scritto in modo diverso.
+function normalizzaRiferimento(s: string): string {
+  return s
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .replace(/\d+/g, (blocco) => blocco.replace(/^0+(?=\d)/, ""));
 }
 
 export default async function StoricoBollePage() {
@@ -123,6 +144,29 @@ export default async function StoricoBollePage() {
     }
   }
 
+  // Ripiego: alcuni fornitori (es. Unicomm, Tosano — vendita tipo
+  // supermercato) non riportano nella fattura elettronica un DDT collegato
+  // in modo strutturato, quindi il confronto sopra non trova mai nulla per
+  // loro. In questo caso confrontiamo il numero DDT della bolla con il
+  // numero stesso della fattura (normalizzato), che per questi fornitori è
+  // di fatto lo stesso riferimento scritto in modo leggermente diverso.
+  const fattureIndicePerNumero = new Map<string, { numero: string; data: string }>();
+  const fornitoreIds = Array.from(new Set(bolle.map((b) => b.fornitoreId)));
+  if (fornitoreIds.length > 0) {
+    const { data: fatture } = await supabase
+      .from("fatture_ricevute")
+      .select("fornitore_id, numero, data")
+      .in("fornitore_id", fornitoreIds);
+
+    for (const f of (fatture ?? []) as unknown as FatturaMinima[]) {
+      if (!f.fornitore_id) continue;
+      const chiave = `${f.fornitore_id}__${normalizzaRiferimento(f.numero)}`;
+      if (!fattureIndicePerNumero.has(chiave)) {
+        fattureIndicePerNumero.set(chiave, { numero: f.numero, data: f.data });
+      }
+    }
+  }
+
   return (
     <div>
       <h1 className="mb-1 text-lg font-semibold text-neutral-900">Storico bolle</h1>
@@ -149,7 +193,10 @@ export default async function StoricoBollePage() {
         {bolle.map((b) => {
           const totale = b.righe.reduce((s, r) => s + r.prezzo * (r.quantita ?? 1), 0);
           const numeroDdtRaw = b.numeroDdt.replace(/^DDT\s+/i, "").trim();
-          const fatturata = fattureIndice.get(`${b.fornitoreId}__${numeroDdtRaw}`) ?? null;
+          const fatturata =
+            fattureIndice.get(`${b.fornitoreId}__${numeroDdtRaw}`) ??
+            fattureIndicePerNumero.get(`${b.fornitoreId}__${normalizzaRiferimento(numeroDdtRaw)}`) ??
+            null;
           return (
             <details
               key={b.chiave}
