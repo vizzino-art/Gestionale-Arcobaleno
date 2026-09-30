@@ -22,6 +22,12 @@ Alcune bolle (specialmente quelle con molte colonne) hanno PIU' colonne numerich
 - come "prezzo_unitario" usa SEMPRE e SOLO la colonna intestata "PREZ.UNIT." o "PREZZO UNITARIO" — MAI la colonna sconto (%SC) o IVA o altre colonne vicine.
 - se la riga mostra anche un importo totale di riga (colonna tipo "IMPORTO" o "TOTALE RIGA"), usalo per controllare il tuo lavoro prima di rispondere: quantita' moltiplicata per prezzo_unitario deve corrispondere (circa) a quell'importo. Se non corrisponde, hai preso la colonna sbagliata: rileggi la riga e correggi quantita' e/o prezzo_unitario finche' il conto torna, prima di includerla nella risposta.
 
+Altre bolle (tipiche dei documenti di trasporto generati da corrieri/depositi, es. "COLLI", "SFUSI", "QXC", "UM", "NUM PZ", "PESO PZ", "TOT", "IMPONIBILE") NON hanno affatto una colonna di prezzo unitario esplicita, solo colonne che descrivono l'imballaggio e un IMPONIBILE che e' il totale imponibile di quella riga (non un prezzo per unita'). In questo caso:
+- come "quantita" usa la colonna "COLLI" (numero di colli/cartoni/confezioni realmente consegnati in quella riga) — che di norma coincide con la colonna "TOT" quando presente. MAI "NUM PZ" (quanti pezzi ci sono dentro ogni collo, non quanti colli sono stati consegnati) ne' "PESO PZ" (il peso di un singolo pezzo, non una quantita').
+- come "prezzo_unitario" NON usare mai l'IMPONIBILE cosi' com'e': quell'importo e' il totale della riga, quindi calcola sempre prezzo_unitario = imponibile_di_riga / quantita (colli). Es. 5 colli con imponibile 120,95 EUR => prezzo_unitario = 120,95 / 5 = 24,19, MAI 120,95.
+
+Alcune bolle riportano, per lo stesso articolo (stesso codice e descrizione), due righe consecutive nella tabella: una con l'imponibile normale, e subito sotto un'altra con la stessa struttura di colonne ma con la scritta "Sconto merce", "Omaggio", "Abbuono merce", "Gratis" o simile al posto dell'importo/imponibile. Questa seconda riga e' merce ricevuta IN OMAGGIO (gratuita), non un errore di stampa e non va mai unita o sommata alla riga principale sopra di essa. Trattala come una riga a se' stante in "righe", con la sua stessa quantita' (i colli/l'unita' realmente indicati su quella riga, che possono essere diversi dalla riga principale), "prezzo_unitario": 0 e "omaggio": true. Non scartarla e non inventare un importo per lei: il testo al posto del numero e' proprio il modo in cui queste bolle segnalano l'omaggio.
+
 Leggi il numero del documento e la data con la massima attenzione, cifra per cifra: sono numeri importanti per riconciliare la bolla con la fattura del fornitore, e un solo numero letto male la rende irriconoscibile.
 
 Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, in questo formato esatto:
@@ -34,14 +40,16 @@ Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, in questo fo
       "descrizione": "descrizione del prodotto cosi' come scritta",
       "quantita": 0,
       "prezzo_unitario": 0,
-      "um": "unita' di misura cosi' come scritta, es. KG, PZ, CF, CT"
+      "um": "unita' di misura cosi' come scritta, es. KG, PZ, CF, CT",
+      "omaggio": false
     }
   ]
 }
 
 Regole importanti:
 - Estrai SOLO i dati visibili nella foto, non inventare ne' arrotondare in modo creativo.
-- "prezzo_unitario" e' il prezzo per singola unita' (quello vicino alla UM), MAI il prezzo totale della riga (quantita' moltiplicata per il prezzo).
+- "prezzo_unitario" e' il prezzo per singola unita' (quello vicino alla UM), MAI il prezzo totale della riga (quantita' moltiplicata per il prezzo). Se la tabella mostra solo un importo/imponibile totale di riga e nessuna colonna di prezzo unitario, calcolalo sempre dividendo l'importo per la quantita' (vedi sopra) — non lasciare mai "prezzo_unitario" uguale al totale della riga quando la quantita' e' maggiore di 1.
+- "omaggio" e' true SOLO per le righe di merce gratuita riconosciute come sopra (testo "Sconto merce"/"Omaggio"/etc. al posto dell'importo); per tutte le altre righe normali scrivi sempre "omaggio": false.
 - I numeri nel JSON vanno scritti col punto decimale (es. 5.94), anche se sulla bolla sono scritti con la virgola.
 - Se un valore non e' leggibile, usa null per quel campo invece di indovinare.
 - Nel dubbio se una riga sia un prodotto vero o una nota/tracciabilita' come sopra, NON includerla: e' meglio saltare un prodotto (Mauro se ne accorge e lo aggiunge a mano) che inventare una riga falsa con prezzo sbagliato.
@@ -53,6 +61,7 @@ type RigaEstratta = {
   quantita: number | null;
   prezzo_unitario: number | null;
   um: string | null;
+  omaggio?: boolean;
 };
 
 type RispostaEstrazione = {

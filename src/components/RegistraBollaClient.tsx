@@ -25,6 +25,7 @@ type RigaEstratta = {
   quantita: number | null;
   prezzo_unitario: number | null;
   um: string | null;
+  omaggio?: boolean;
 };
 
 type RispostaEstrazione = {
@@ -48,6 +49,11 @@ type RigaLavoro = {
   umConfermata: boolean; // per prodotti nuovi con UM non riconosciuta: conferma esplicita di Mauro
   categoriaId: string; // solo per prodotti nuovi: "" = nessuna, la sceglie dopo in Pannello; NUOVA_CATEGORIA = la crea al volo
   categoriaNuovoNome: string; // nome della nuova categoria, quando categoriaId === NUOVA_CATEGORIA
+  // Riga di merce ricevuta in omaggio (gratuita): prezzo sempre 0, mai usata
+  // per aggiornare il listino né registrata nello storico prezzi (altrimenti
+  // "ultimo pagato/minimo" mostrerebbe 0€, che è fuorviante) — resta comunque
+  // visibile e modificabile qui, per completezza della revisione della bolla.
+  omaggio: boolean;
 };
 
 function normalizza(s: string): string {
@@ -192,6 +198,9 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
   const [salvando, setSalvando] = useState(false);
   const [errore, setErrore] = useState<string | null>(null);
   const [salvato, setSalvato] = useState(false);
+  // Quante righe in omaggio sono state confermate nell'ultimo salvataggio,
+  // solo per il messaggio di conferma (vedi salvaTutto()).
+  const [omaggiSalvatiUltimo, setOmaggiSalvatiUltimo] = useState(0);
 
   // Categorie: partono da quelle già a sistema, ma quando se ne crea una al
   // volo da qui (vedi NUOVA_CATEGORIA) si aggiunge anche a questo elenco
@@ -295,18 +304,24 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
 
       const nuoveRighe: RigaLavoro[] = estratto.righe.map((r, i) => {
         const prodottoId = trovaMatch(r, prodottiFornitore);
+        const omaggio = r.omaggio === true;
         return {
           chiave: `${Date.now()}-${i}`,
           codiceArticolo: r.codice_articolo ?? "",
           descrizione: r.descrizione,
           quantita: r.quantita != null ? String(r.quantita) : "",
-          prezzo: r.prezzo_unitario != null ? String(r.prezzo_unitario) : "",
+          // Una riga in omaggio è sempre a prezzo 0, indipendentemente da
+          // cosa il modello abbia letto in "prezzo_unitario".
+          prezzo: omaggio ? "0" : r.prezzo_unitario != null ? String(r.prezzo_unitario) : "",
           um: r.um ?? "",
           prodottoId,
-          aggiornaPrezzo: true,
+          // Per una riga in omaggio non ha senso proporre di aggiornare il
+          // listino a 0€: parte sempre deselezionato.
+          aggiornaPrezzo: !omaggio,
           umConfermata: false,
           categoriaId: "",
           categoriaNuovoNome: "",
+          omaggio,
         };
       });
       setRighe(nuoveRighe);
@@ -328,6 +343,19 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
     setRighe((prev) => prev.filter((r) => r.chiave !== chiave));
   }
 
+  // Attivando "in omaggio" a mano (o correggendo un falso positivo letto
+  // dalla foto) sistemiamo anche prezzo/aggiornaPrezzo di conseguenza,
+  // invece di lasciare Mauro a doverlo fare a parte su due campi diversi.
+  function impostaOmaggio(chiave: string, omaggio: boolean) {
+    setRighe((prev) =>
+      prev.map((r) =>
+        r.chiave === chiave
+          ? { ...r, omaggio, prezzo: omaggio ? "0" : r.prezzo, aggiornaPrezzo: omaggio ? false : r.aggiornaPrezzo }
+          : r
+      )
+    );
+  }
+
   async function salvaTutto() {
     if (!fornitoreId) return;
     if (duplicato && !duplicatoConfermato) {
@@ -347,6 +375,9 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
     const daSaltareProdotto: string[] = [];
     const daVerificare: string[] = [];
     const righeRiuscite = new Set<string>();
+    // Righe in omaggio confermate: contate a parte solo per il messaggio
+    // finale, non finiscono mai nello storico prezzi (vedi sotto).
+    let omaggiConfermati = 0;
     const inserimentiStorico: {
       prodotto_id: string;
       fornitore_id: string;
@@ -449,19 +480,32 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
       } else if (!prodottoId) {
         daSaltareProdotto.push(r.descrizione);
         continue;
-      } else if (r.aggiornaPrezzo) {
+      } else if (r.aggiornaPrezzo && !r.omaggio) {
+        // La condizione "&& !r.omaggio" è una rete di sicurezza in più:
+        // una riga in omaggio non deve MAI aggiornare il prezzo di listino
+        // a 0€, anche se per qualche motivo la spunta risultasse comunque
+        // attiva.
         aggiornamentiPrezzo.push({ id: prodottoId, prezzo });
       }
 
       righeRiuscite.add(r.chiave);
-      inserimentiStorico.push({
-        prodotto_id: prodottoId,
-        fornitore_id: fornitoreId,
-        data: dataDocumento || new Date().toISOString().slice(0, 10),
-        numero_fattura: numeroDdt ? `DDT ${numeroDdt}` : null,
-        prezzo,
-        quantita,
-      });
+
+      if (r.omaggio) {
+        // Una riga in omaggio è merce vera arrivata con la bolla, ma non ha
+        // un prezzo reale: non la registriamo nello storico_prezzi_fatture
+        // per non sporcare "ultimo pagato/minimo" con un prezzo 0€ che non
+        // rappresenta mai il vero costo del prodotto.
+        omaggiConfermati += 1;
+      } else {
+        inserimentiStorico.push({
+          prodotto_id: prodottoId,
+          fornitore_id: fornitoreId,
+          data: dataDocumento || new Date().toISOString().slice(0, 10),
+          numero_fattura: numeroDdt ? `DDT ${numeroDdt}` : null,
+          prezzo,
+          quantita,
+        });
+      }
     }
 
     if (inserimentiStorico.length > 0) {
@@ -529,6 +573,11 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
     if (messaggi.length > 0) {
       setErrore(`Attenzione: ${messaggi.join(" ")}`);
     }
+    if (omaggiConfermati > 0) {
+      setOmaggiSalvatiUltimo(omaggiConfermati);
+    } else {
+      setOmaggiSalvatiUltimo(0);
+    }
   }
 
   return (
@@ -592,7 +641,11 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
 
       {salvato && (
         <p className="rounded-lg bg-green-50 p-3 text-sm text-green-700">
-          ✓ Bolla registrata. Fai la prossima foto quando vuoi.
+          ✓ Bolla registrata
+          {omaggiSalvatiUltimo > 0
+            ? ` (di cui ${omaggiSalvatiUltimo} in omaggio, non incluse nello storico prezzi).`
+            : "."}{" "}
+          Fai la prossima foto quando vuoi.
         </p>
       )}
 
@@ -654,13 +707,17 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
               const prezzoAttuale = prodottoScelto?.prezzo_listino ?? null;
               const prezzoNuovo = parseFloat(r.prezzo.replace(",", "."));
               const prezzoCambiato =
+                !r.omaggio &&
                 prodottoScelto &&
                 prezzoAttuale != null &&
                 !isNaN(prezzoNuovo) &&
                 Math.abs(prezzoAttuale - prezzoNuovo) > 0.004;
 
               return (
-                <div key={r.chiave} className="rounded-lg border border-neutral-200 p-3">
+                <div
+                  key={r.chiave}
+                  className={`rounded-lg border p-3 ${r.omaggio ? "border-amber-300 bg-amber-50/40" : "border-neutral-200"}`}
+                >
                   <div className="mb-2 flex items-start justify-between gap-2">
                     <input
                       type="text"
@@ -677,6 +734,15 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
                     </button>
                   </div>
 
+                  <label className="mb-2 flex items-center gap-1.5 text-xs font-medium text-amber-800">
+                    <input
+                      type="checkbox"
+                      checked={r.omaggio}
+                      onChange={(e) => impostaOmaggio(r.chiave, e.target.checked)}
+                    />
+                    🎁 In omaggio (gratis) — prezzo a 0€, non aggiorna il listino, non va nello storico prezzi
+                  </label>
+
                   <div className="mb-2 flex gap-2">
                     <label className="w-24 text-xs text-neutral-500">
                       Quantità
@@ -692,8 +758,9 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
                       <input
                         type="text"
                         value={r.prezzo}
+                        disabled={r.omaggio}
                         onChange={(e) => aggiornaRiga(r.chiave, "prezzo", e.target.value)}
-                        className="mt-1 block w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm outline-none focus:border-neutral-500"
+                        className="mt-1 block w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm outline-none focus:border-neutral-500 disabled:bg-neutral-100 disabled:text-neutral-400"
                       />
                     </label>
                     <label className="w-20 text-xs text-neutral-500">
