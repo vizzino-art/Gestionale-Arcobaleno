@@ -606,6 +606,59 @@ export function RegistroFattureClient({
   const [collegamentoInCorso, setCollegamentoInCorso] = useState<Record<string, boolean>>({});
   const [collegamentoErrore, setCollegamentoErrore] = useState<Record<string, string>>({});
 
+  // Correzione del fornitore già collegato a una fattura salvata (o
+  // abbinamento a posteriori se era stata archiviata senza fornitore) —
+  // serve per i casi come GESCO/Amadori: la fattura elettronica arriva a
+  // nome "GESCO Societa Cooperativa Agricola" ma a sistema va abbinata al
+  // fornitore "Amadori" (stesso fornitore, nome diverso in fattura), e se
+  // in fase di caricamento non viene scelto il fornitore giusto, sia il
+  // confronto automatico che il collegamento a mano restano bloccati
+  // (entrambi richiedono che la fattura abbia un fornitore_id impostato).
+  const [fornitoreCorrezione, setFornitoreCorrezione] = useState<Record<string, string>>({});
+  const [correzioneFornitoreInCorso, setCorrezioneFornitoreInCorso] = useState<Record<string, boolean>>({});
+  const [correzioneFornitoreErrore, setCorrezioneFornitoreErrore] = useState<Record<string, string>>({});
+
+  async function correggiFornitore(f: FatturaSalvata, nuovoFornitoreId: string) {
+    setCorrezioneFornitoreErrore((prec) => ({ ...prec, [f.id]: "" }));
+    setCorrezioneFornitoreInCorso((prec) => ({ ...prec, [f.id]: true }));
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("fatture_ricevute")
+        .update({ fornitore_id: nuovoFornitoreId || null })
+        .eq("id", f.id);
+      if (error) {
+        setCorrezioneFornitoreErrore((prec) => ({ ...prec, [f.id]: `Errore: ${error.message}` }));
+        return;
+      }
+      // Come al primo salvataggio: se il fornitore scelto non ha ancora
+      // questa P.IVA a sistema, la impariamo, così le prossime fatture con
+      // lo stesso nome/P.IVA in XML si abbineranno da sole.
+      if (nuovoFornitoreId) {
+        const fornitoreSelezionato = listaFornitori.find((fo) => fo.id === nuovoFornitoreId);
+        const pivaFattura = normalizzaPiva(f.fornitore_piva);
+        const pivaAttuale = fornitoreSelezionato?.piva ? normalizzaPiva(fornitoreSelezionato.piva) : "";
+        if (pivaFattura && pivaFattura !== pivaAttuale) {
+          const { error: errorePiva } = await supabase
+            .from("fornitori")
+            .update({ piva: f.fornitore_piva })
+            .eq("id", nuovoFornitoreId);
+          if (!errorePiva) {
+            setListaFornitori((prec) =>
+              prec.map((fo) => (fo.id === nuovoFornitoreId ? { ...fo, piva: f.fornitore_piva } : fo))
+            );
+          }
+        }
+      }
+      setFatture((prec) =>
+        prec.map((x) => (x.id === f.id ? { ...x, fornitore_id: nuovoFornitoreId || null } : x))
+      );
+      setFornitoreCorrezione((prec) => ({ ...prec, [f.id]: nuovoFornitoreId }));
+    } finally {
+      setCorrezioneFornitoreInCorso((prec) => ({ ...prec, [f.id]: false }));
+    }
+  }
+
   async function collegaBolla(f: FatturaSalvata, bolla: Bolla) {
     setCollegamentoErrore((prec) => ({ ...prec, [f.id]: "" }));
     setCollegamentoInCorso((prec) => ({ ...prec, [f.id]: true }));
@@ -1175,11 +1228,39 @@ export function RegistroFattureClient({
                     );
                   })()}
 
-                  {!f.fornitore_id && (
-                    <p className="mt-1 text-xs text-neutral-500">
-                      Abbina questa fattura a un fornitore a sistema per poter collegare le sue bolle.
-                    </p>
-                  )}
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <label className="text-xs text-neutral-500">
+                      {f.fornitore_id
+                        ? "Fornitore collegato a sistema:"
+                        : "Nessun fornitore collegato — abbinane uno per poter collegare le sue bolle:"}
+                    </label>
+                    <select
+                      value={fornitoreCorrezione[f.id] ?? f.fornitore_id ?? ""}
+                      onChange={(e) =>
+                        setFornitoreCorrezione((prec) => ({ ...prec, [f.id]: e.target.value }))
+                      }
+                      className="rounded-md border border-neutral-300 px-2 py-1 text-xs"
+                    >
+                      <option value="">— nessuno (solo archiviata) —</option>
+                      {listaFornitori.map((fo) => (
+                        <option key={fo.id} value={fo.id}>
+                          {fo.nome}
+                        </option>
+                      ))}
+                    </select>
+                    {(fornitoreCorrezione[f.id] ?? f.fornitore_id ?? "") !== (f.fornitore_id ?? "") && (
+                      <button
+                        onClick={() => correggiFornitore(f, fornitoreCorrezione[f.id] ?? "")}
+                        disabled={correzioneFornitoreInCorso[f.id]}
+                        className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                      >
+                        {correzioneFornitoreInCorso[f.id] ? "Salvo…" : "Salva fornitore"}
+                      </button>
+                    )}
+                    {correzioneFornitoreErrore[f.id] && (
+                      <span className="text-xs text-red-700">{correzioneFornitoreErrore[f.id]}</span>
+                    )}
+                  </div>
 
                   {f.fornitore_id &&
                     (() => {
