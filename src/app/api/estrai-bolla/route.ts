@@ -26,11 +26,11 @@ Altre bolle (tipiche dei documenti di trasporto generati da corrieri/depositi, e
 - come "quantita" usa la colonna "COLLI" (numero di colli/cartoni/confezioni realmente consegnati in quella riga) — che di norma coincide con la colonna "TOT" quando presente. MAI "NUM PZ" (quanti pezzi ci sono dentro ogni collo, non quanti colli sono stati consegnati) ne' "PESO PZ" (il peso di un singolo pezzo, non una quantita').
 - come "prezzo_unitario" NON usare mai l'IMPONIBILE cosi' com'e': quell'importo e' il totale della riga, quindi calcola sempre prezzo_unitario = imponibile_di_riga / quantita (colli). Es. 5 colli con imponibile 120,95 EUR => prezzo_unitario = 120,95 / 5 = 24,19, MAI 120,95.
 
-Le bolle di fornitori ortofrutticoli (frutta/verdura fresca) hanno tipicamente, da sinistra a destra dopo la descrizione, QUATTRO colonne numeriche consecutive in quest'ordine esatto: "P. LORDO" (peso lordo in kg, include l'imballo), "P. NETTO" (peso netto in kg), "PREZZO" (prezzo unitario al kg) e "IMPORTO" (totale di riga). Sono quattro numeri diversi affiancati, non due: NON fermarti alle prime due colonne di peso pensando che la seconda sia il prezzo.
-- come "quantita" usa SEMPRE la colonna "P. NETTO" — la SECONDA delle quattro colonne, non la prima ("P. LORDO", che e' sempre uguale o leggermente maggiore) ne' "COLLI" (il numero di casse, quasi sempre 1 o 2).
-- come "prezzo_unitario" usa SEMPRE la colonna "PREZZO" — la TERZA delle quattro colonne, quella subito a sinistra di "IMPORTO" (l'ultima). Non e' mai "P. LORDO" (prima colonna) ne' "P. NETTO" (seconda colonna): entrambe sono pesi in kg, non prezzi, anche quando il numero sembra plausibile come prezzo.
-- Esempio reale (stessa bolla, tre righe): "CAROTE" — P.LORDO 10,00, P.NETTO 10,00, PREZZO 1,00, IMPORTO 10,00 => quantita=10, prezzo_unitario=1. "POMODORO CILIEGINO" — P.LORDO 7,20, P.NETTO 6,90, PREZZO 5,50, IMPORTO 37,95 => quantita=6.9, prezzo_unitario=5.5 (MAI quantita=7.2 ne' prezzo_unitario=6.9: sono le colonne P.LORDO/P.NETTO, non PREZZO). "CIPOLLE BIANCHE" — P.LORDO 11,00, P.NETTO 10,70, PREZZO 1,40, IMPORTO 14,98 => quantita=10.7, prezzo_unitario=1.4.
-- Prima di rispondere, per OGNI riga di queste bolle calcola quantita (P.NETTO) moltiplicato per prezzo_unitario (PREZZO, la terza colonna, non la prima ne' la seconda) e verifica che il risultato corrisponda a IMPORTO. Se non corrisponde, hai quasi certamente preso P.LORDO o P.NETTO al posto di PREZZO: individua la vera colonna "PREZZO" (subito prima di "IMPORTO") e ricalcola prima di includere la riga nella risposta.
+Le bolle di fornitori ortofrutticoli (frutta/verdura fresca) hanno tipicamente, da sinistra a destra dopo la descrizione, QUATTRO colonne numeriche consecutive in quest'ordine esatto: "P. LORDO" (peso lordo in kg, include l'imballo), "P. NETTO" (peso netto in kg), "PREZZO" (prezzo unitario al kg) e "IMPORTO" (totale di riga). Sono quattro numeri diversi affiancati, non due. Su una tabella cosi' fitta e' facile "scivolare" di una riga leggendo veloce (es. prendere il prezzo della riga sotto), quindi per QUESTO tipo di bolla NON decidere subito quantita/prezzo_unitario a occhio: procedi in due passi, riga per riga.
+- Passo 1 — trascrizione: per ogni riga-prodotto, leggi e scrivi nei campi "p_lordo", "p_netto", "prezzo_letto", "importo_letto" ESATTAMENTE i quattro numeri stampati su quella riga, nello stesso ordine in cui compaiono (P.LORDO, P.NETTO, PREZZO, IMPORTO), uno alla volta, senza saltarne nessuno e senza ancora decidere cosa userai come prezzo o quantita'. Trascrivili cosi' come appaiono stampati, cifra per cifra, prima di passare al passo 2.
+- Passo 2 — calcolo: SOLO dopo aver trascritto tutti e quattro i numeri, imposta "quantita" = p_netto e "prezzo_unitario" = prezzo_letto (mai p_lordo, mai p_netto come prezzo). Poi verifica: p_netto moltiplicato per prezzo_letto deve corrispondere (circa) a importo_letto. Se non corrisponde, i quattro numeri trascritti al passo 1 sono sbagliati o scambiati con quelli della riga sopra/sotto: torna a guardare la foto riga per riga e ritrascrivili, non limitarti ad aggiustare il calcolo.
+- Esempio reale (stessa bolla, tre righe): "CAROTE" — p_lordo=10, p_netto=10, prezzo_letto=1, importo_letto=10 => quantita=10, prezzo_unitario=1. "POMODORO CILIEGINO" — p_lordo=7.2, p_netto=6.9, prezzo_letto=5.5, importo_letto=37.95 => quantita=6.9, prezzo_unitario=5.5. "CIPOLLE BIANCHE" — p_lordo=11, p_netto=10.7, prezzo_letto=1.4, importo_letto=14.98 => quantita=10.7, prezzo_unitario=1.4.
+- Per tutte le altre bolle (quelle senza colonne P.LORDO/P.NETTO/PREZZO/IMPORTO) lascia "p_lordo", "p_netto", "prezzo_letto", "importo_letto" a null: servono solo per questo tipo di layout ortofrutticolo.
 
 Alcune bolle riportano, per lo stesso articolo (stesso codice e descrizione), due righe consecutive nella tabella: una con l'imponibile normale, e subito sotto un'altra con la stessa struttura di colonne ma con la scritta "Sconto merce", "Omaggio", "Abbuono merce", "Gratis" o simile al posto dell'importo/imponibile. Questa seconda riga e' merce ricevuta IN OMAGGIO (gratuita), non un errore di stampa e non va mai unita o sommata alla riga principale sopra di essa. Trattala come una riga a se' stante in "righe", con la sua stessa quantita' (i colli/l'unita' realmente indicati su quella riga, che possono essere diversi dalla riga principale), "prezzo_unitario": 0 e "omaggio": true. Non scartarla e non inventare un importo per lei: il testo al posto del numero e' proprio il modo in cui queste bolle segnalano l'omaggio.
 
@@ -47,10 +47,16 @@ Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, in questo fo
       "quantita": 0,
       "prezzo_unitario": 0,
       "um": "unita' di misura cosi' come scritta, es. KG, PZ, CF, CT",
-      "omaggio": false
+      "omaggio": false,
+      "p_lordo": null,
+      "p_netto": null,
+      "prezzo_letto": null,
+      "importo_letto": null
     }
   ]
 }
+
+I campi "p_lordo", "p_netto", "prezzo_letto", "importo_letto" vanno valorizzati SOLO per le bolle ortofrutticole col layout a quattro colonne descritto sopra (altrimenti lasciali null): sono la trascrizione grezza, passo 1; "quantita" e "prezzo_unitario" restano comunque il risultato finale del passo 2, da compilare sempre in ogni caso.
 
 Regole importanti:
 - Estrai SOLO i dati visibili nella foto, non inventare ne' arrotondare in modo creativo.
@@ -68,6 +74,17 @@ type RigaEstratta = {
   prezzo_unitario: number | null;
   um: string | null;
   omaggio?: boolean;
+  // Trascrizione grezza delle 4 colonne delle bolle ortofrutticole (P.LORDO,
+  // P.NETTO, PREZZO, IMPORTO), valorizzata solo per quel layout. Usata qui
+  // sotto per ricalcolare quantita/prezzo_unitario in modo deterministico,
+  // invece di fidarsi del calcolo gia' fatto dal modello: trascrivere i 4
+  // numeri grezzi separatamente e poi far scegliere al codice quali usare
+  // e' molto piu' affidabile che far scegliere e calcolare tutto al modello
+  // in un solo passaggio su una tabella con tante colonne numeriche vicine.
+  p_lordo?: number | null;
+  p_netto?: number | null;
+  prezzo_letto?: number | null;
+  importo_letto?: number | null;
 };
 
 type RispostaEstrazione = {
@@ -164,6 +181,22 @@ export async function POST(req: NextRequest) {
         { status: 422 }
       );
     }
+
+    // Per le bolle ortofrutticole (layout P.LORDO/P.NETTO/PREZZO/IMPORTO) non ci
+    // fidiamo del quantita/prezzo_unitario gia' calcolati dal modello: se ha
+    // trascritto p_netto e prezzo_letto, li usiamo noi qui in modo deterministico
+    // al posto suo, cosi' un eventuale "scivolamento" di riga nella lettura non
+    // puo' piu' mescolare prezzo e quantita' tra prodotti diversi.
+    estratto.righe = estratto.righe.map((riga) => {
+      const pNetto = typeof riga.p_netto === "number" ? riga.p_netto : null;
+      const prezzoLetto = typeof riga.prezzo_letto === "number" ? riga.prezzo_letto : null;
+      if (pNetto === null || prezzoLetto === null) return riga;
+      return {
+        ...riga,
+        quantita: pNetto,
+        prezzo_unitario: riga.omaggio ? 0 : prezzoLetto,
+      };
+    });
 
     return NextResponse.json(estratto);
   } catch (e) {
