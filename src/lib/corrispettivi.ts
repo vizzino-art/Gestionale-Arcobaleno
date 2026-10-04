@@ -30,6 +30,16 @@ import { CAMPI_CORRISPETTIVI } from "@/lib/corrispettivi-campi";
 //    gruppo sopra ("VERSAMENTO") perché è una cella unita (merge) su due
 //    colonne — l'API Google restituisce il testo solo nella prima delle
 //    due, la seconda arriverebbe vuota.
+// 3. (4/10) Da ottobre è comparsa nel foglio una colonna indipendente con
+//    intestazione "SUMUP" (tutta maiuscola, tra "Satispay" e "F24", vuota/
+//    non usata da nessuna automazione) OLTRE alla vera colonna "SumUp" (il
+//    lordo degli incassi, tra "F24" e "SumUp - Comm", quella con l'importo
+//    reale). norm() abbassa entrambe le intestazioni alla stessa stringa
+//    "sumup", quindi una ricerca per testo con findIndex (primo risultato)
+//    trovava sempre la colonna sbagliata (vuota, quindi 0,00 in pagina)
+//    invece di quella vera. "SumUp (lordo)" va quindi individuata per
+//    posizione come i casi sopra: è sempre la colonna subito prima di
+//    "SumUp - Comm", che invece si trova per testo senza ambiguità.
 export const MESI_SCHEDE = [
   "Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
   "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre",
@@ -109,7 +119,6 @@ const INTESTAZIONI_TESTO: Record<string, string> = {
   satispay: "satispay",
   eden: "eden",
   f24: "f24",
-  sumup_lordo: "sumup",
   sumup_comm: "sumup - comm",
   acq_card_sumup: "acq. card sumump",
   mastercard: "mastercard+maestro",
@@ -163,6 +172,13 @@ export function trovaColonne(righe: string[][]): { colonne: ColonneTrovate | nul
     const indice = intestazioni.findIndex((c) => norm(c) === testo);
     perCampo[id] = indice === -1 ? undefined : indice;
   }
+
+  // "SumUp (lordo)" per posizione, non per testo — vedi punto 3 nel
+  // commento in testa al file: da ottobre esiste anche una colonna
+  // "SUMUP" indipendente e vuota che una ricerca testuale troverebbe per
+  // prima, restituendo sempre 0,00 invece del vero importo.
+  const colSumupComm = perCampo["sumup_comm"];
+  perCampo["sumup_lordo"] = colSumupComm !== undefined ? colSumupComm - 1 : undefined;
 
   const etichetteVersamento: [string | null, string | null] = [
     intestazioni[colVersamento1] != null ? intestazioni[colVersamento1].toString().trim() : null,
