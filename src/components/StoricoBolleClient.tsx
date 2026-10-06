@@ -33,6 +33,29 @@ export function StoricoBolleClient({ bolle, fattureAutomatiche, collegamentiManu
   const [quantitaModifica, setQuantitaModifica] = useState("");
   const [salvataggioInCorso, setSalvataggioInCorso] = useState(false);
   const [erroreSalvataggio, setErroreSalvataggio] = useState<string | null>(null);
+  // Richiesto da Mauro il 6/10: con centinaia di bolle la lista è dispersiva
+  // da scorrere per trovare quelle ancora da collegare — un interruttore per
+  // nascondere al volo quelle già fatturate, senza toccare l'ordinamento.
+  const [soloDaCollegare, setSoloDaCollegare] = useState(false);
+
+  function trovaFatturata(b: Bolla): Fatturata | null {
+    const chiaveManuale = `${b.fornitoreId}__${b.numeroDdtRaw}__${b.data}`;
+    const chiaveAutomatica = `${b.fornitoreId}__${b.numeroDdtRaw}`;
+    const manuale = collegamentiManuali[chiaveManuale];
+    const automatico = fattureAutomatiche[chiaveAutomatica];
+    return manuale
+      ? { ...manuale, fonte: "manuale" }
+      : automatico
+        ? { ...automatico, fonte: "automatico" }
+        : null;
+  }
+
+  const bolleDaCollegare = useMemo(
+    () => bolle.filter((b) => !trovaFatturata(b)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [bolle, fattureAutomatiche, collegamentiManuali]
+  );
+  const bolleVisibili = soloDaCollegare ? bolleDaCollegare : bolle;
 
   function apriModifica(rigaId: string, prezzoAttuale: number, quantitaAttuale: number | null) {
     setRigaInModifica(rigaId);
@@ -81,24 +104,25 @@ export function StoricoBolleClient({ bolle, fattureAutomatiche, collegamentiManu
   }
 
   return (
-    <div className="space-y-3">
-      {bolle.map((b) => {
+    <div>
+      <label className="mb-3 flex w-fit items-center gap-2 text-sm text-neutral-700">
+        <input
+          type="checkbox"
+          checked={soloDaCollegare}
+          onChange={(e) => setSoloDaCollegare(e.target.checked)}
+          className="h-4 w-4 rounded border-neutral-300"
+        />
+        Mostra solo le bolle da collegare ({bolleDaCollegare.length} su {bolle.length})
+      </label>
+      <div className="space-y-3">
+      {bolleVisibili.map((b) => {
         const totale = b.righe.reduce((s, r) => s + r.prezzo * (r.quantita ?? 1), 0);
-        const chiaveManuale = `${b.fornitoreId}__${b.numeroDdtRaw}__${b.data}`;
-        const chiaveAutomatica = `${b.fornitoreId}__${b.numeroDdtRaw}`;
-        const manuale = collegamentiManuali[chiaveManuale];
-        const automatico = fattureAutomatiche[chiaveAutomatica];
-        const fatturata: Fatturata | null = manuale
-          ? { ...manuale, fonte: "manuale" }
-          : automatico
-            ? { ...automatico, fonte: "automatico" }
-            : null;
+        const fatturata = trovaFatturata(b);
 
         return (
           <details
             key={b.chiave}
             className="rounded-xl border border-neutral-200 bg-white p-4"
-            open
           >
             <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 text-sm font-medium text-neutral-900">
               <span>
@@ -186,6 +210,7 @@ export function StoricoBolleClient({ bolle, fattureAutomatiche, collegamentiManu
           </details>
         );
       })}
+      </div>
     </div>
   );
 }
