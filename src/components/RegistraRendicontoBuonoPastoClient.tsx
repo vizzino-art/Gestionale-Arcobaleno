@@ -98,6 +98,9 @@ export function RegistraRendicontoBuonoPastoClient({ tipi, onSalvato, onAnnulla 
   const [errore, setErrore] = useState<string | null>(null);
   const [duplicato, setDuplicato] = useState<boolean>(false);
   const [duplicatoConfermato, setDuplicatoConfermato] = useState(false);
+  // Richiesto da Mauro l'8/10: oltre al tasto che apre la fotocamera/file
+  // picker, anche trascinare direttamente il PDF/foto sopra il riquadro.
+  const [trascinando, setTrascinando] = useState(false);
 
   // Avvisa se questo numero di documento è già stato registrato per questo
   // tipo di buono pasto, stesso criterio di RegistraBollaClient per le bolle
@@ -246,13 +249,36 @@ export function RegistraRendicontoBuonoPastoClient({ tipi, onSalvato, onAnnulla 
           if (file) scattaOCarica(file);
         }}
       />
-      <button
-        onClick={() => inputFileRef.current?.click()}
-        disabled={!tipoId || caricando}
-        className="w-full rounded-lg bg-neutral-900 px-4 py-3 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!tipoId || caricando) return;
+          setTrascinando(true);
+        }}
+        onDragLeave={() => setTrascinando(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setTrascinando(false);
+          if (!tipoId || caricando) return;
+          const file = e.dataTransfer.files?.[0];
+          if (file) scattaOCarica(file);
+        }}
+        className={`rounded-lg border-2 border-dashed p-1 transition-colors ${
+          trascinando ? "border-neutral-900 bg-neutral-50" : "border-transparent"
+        }`}
       >
-        {caricando ? "Leggo il documento…" : "📷 Fai foto o carica il rendiconto/PDF"}
-      </button>
+        <button
+          onClick={() => inputFileRef.current?.click()}
+          disabled={!tipoId || caricando}
+          className="w-full rounded-lg bg-neutral-900 px-4 py-3 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+        >
+          {caricando
+            ? "Leggo il documento…"
+            : trascinando
+              ? "Rilascia qui il file"
+              : "📷 Fai foto, trascina qui o carica il rendiconto/PDF"}
+        </button>
+      </div>
 
       {anteprimaUrl && (
         // eslint-disable-next-line @next/next/no-img-element
