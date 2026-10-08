@@ -11,6 +11,7 @@ type Props = {
   tipiIniziali: TipoBuonoPasto[];
   rendiconti: RendicontoBuonoPasto[];
   abbinamenti: Record<string, MovimentoMinimo | null>;
+  pianificatiInAttesa: Record<string, MovimentoMinimo | null>;
   conti: Conto[];
 };
 
@@ -23,7 +24,7 @@ function formattaEuro(n: number | null): string {
   return n != null ? `€${n.toFixed(2)}` : "—";
 }
 
-export function BuoniPastoClient({ tipiIniziali, rendiconti, abbinamenti, conti }: Props) {
+export function BuoniPastoClient({ tipiIniziali, rendiconti, abbinamenti, pianificatiInAttesa, conti }: Props) {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
@@ -160,6 +161,7 @@ export function BuoniPastoClient({ tipiIniziali, rendiconti, abbinamenti, conti 
         {rendiconti.map((r) => {
           const tipo = tipiPerId.get(r.tipo_id);
           const movimento = abbinamenti[r.id];
+          const pianificato = pianificatiInAttesa[r.id];
           return (
             <div key={r.id} className="rounded-xl border border-neutral-200 bg-white p-4">
               <div className="flex flex-wrap items-center justify-between gap-2 text-sm font-medium text-neutral-900">
@@ -172,6 +174,13 @@ export function BuoniPastoClient({ tipiIniziali, rendiconti, abbinamenti, conti 
                     title={`Incasso trovato in Prima Nota: "${movimento.causale}" del ${formattaData(movimento.data)}`}
                   >
                     🔗 Incassato — {formattaData(movimento.data)}
+                  </span>
+                ) : pianificato ? (
+                  <span
+                    className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700"
+                    title={`Movimento pianificato in Prima Nota: "${pianificato.causale}" del ${formattaData(pianificato.data)} — da confermare lì con "✓ È avvenuto" quando arriva davvero.`}
+                  >
+                    📅 Pianificato — {formattaData(pianificato.data)}
                   </span>
                 ) : (
                   <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">

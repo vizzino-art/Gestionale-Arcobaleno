@@ -176,4 +176,8 @@ export type RendicontoBuonoPasto = {
   data_pagamento_prevista: string | null;
   note: string | null;
   created_at: string;
+  // Movimento "pianificato" creato in Prima Nota al salvataggio (se il tipo
+  // aveva un conto di accredito impostato) — null se non creato, es. perché
+  // mancava il conto, l'importo netto o la data di pagamento prevista.
+  movimento_pianificato_id: string | null;
 };

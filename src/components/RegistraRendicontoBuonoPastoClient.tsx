@@ -126,6 +126,8 @@ export function RegistraRendicontoBuonoPastoClient({ tipi, onSalvato, onAnnulla 
     };
   }, [tipoId, numeroDocumento, supabase]);
 
+  const tipoSelezionato = tipi.find((t) => t.id === tipoId);
+
   async function scattaOCarica(file: File) {
     setErrore(null);
     setCaricando(true);
@@ -196,25 +198,56 @@ export function RegistraRendicontoBuonoPastoClient({ tipi, onSalvato, onAnnulla 
     setSalvando(true);
     setErrore(null);
 
-    const { error } = await supabase.from("rendiconti_buoni_pasto").insert({
-      tipo_id: tipoId,
-      numero_documento: numeroDocumento.trim() || null,
-      data_documento: dataDocumento || null,
-      periodo_da: periodoDa || null,
-      periodo_a: periodoA || null,
-      numero_ticket: ticket,
-      totale_lordo: lordo,
-      importo_netto: netto,
-      data_pagamento_prevista: dataPagamentoPrevista || null,
-    });
+    const { data: nuovoRendiconto, error } = await supabase
+      .from("rendiconti_buoni_pasto")
+      .insert({
+        tipo_id: tipoId,
+        numero_documento: numeroDocumento.trim() || null,
+        data_documento: dataDocumento || null,
+        periodo_da: periodoDa || null,
+        periodo_a: periodoA || null,
+        numero_ticket: ticket,
+        totale_lordo: lordo,
+        importo_netto: netto,
+        data_pagamento_prevista: dataPagamentoPrevista || null,
+      })
+      .select("id")
+      .single();
 
-    setSalvando(false);
-
-    if (error) {
-      setErrore(`Errore nel salvataggio: ${error.message}`);
+    if (error || !nuovoRendiconto) {
+      setSalvando(false);
+      setErrore(`Errore nel salvataggio: ${error?.message ?? "sconosciuto"}`);
       return;
     }
 
+    // Se il tipo ha un conto di accredito impostato e abbiamo importo netto
+    // e data prevista, crea subito il movimento "pianificato" in Prima Nota
+    // (richiesto da Mauro l'8/10): così l'incasso atteso compare nel saldo
+    // previsto senza doverlo inserire a mano una seconda volta. Quando il
+    // bonifico arriva davvero, si conferma da Prima Nota con "✓ È avvenuto"
+    // — lo stesso movimento diventa effettivo, mai un doppione.
+    const tipo = tipi.find((t) => t.id === tipoId);
+    if (tipo?.conto_atteso_id && netto !== null && dataPagamentoPrevista) {
+      const { data: movimento, error: erroreMovimento } = await supabase
+        .from("movimenti_prima_nota")
+        .insert({
+          data: dataPagamentoPrevista,
+          causale: `Buono pasto ${tipo.nome}${numeroDocumento.trim() ? ` - rendiconto ${numeroDocumento.trim()}` : ""}`,
+          conto_id: tipo.conto_atteso_id,
+          importo: netto,
+          stato: "pianificato",
+        })
+        .select("id")
+        .single();
+      if (!erroreMovimento && movimento) {
+        await supabase
+          .from("rendiconti_buoni_pasto")
+          .update({ movimento_pianificato_id: movimento.id })
+          .eq("id", nuovoRendiconto.id);
+      }
+    }
+
+    setSalvando(false);
     onSalvato();
   }
 
@@ -400,6 +433,14 @@ export function RegistraRendicontoBuonoPastoClient({ tipi, onSalvato, onAnnulla 
               className="mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-500"
             />
           </label>
+
+          {!tipoSelezionato?.conto_atteso_id && (
+            <p className="rounded-md bg-amber-50 px-2.5 py-2 text-xs text-amber-800">
+              ⚠️ Nessun conto di accredito impostato per {tipoSelezionato?.nome ?? "questo tipo"}:
+              il rendiconto verrà salvato, ma non creo il movimento previsto in Prima Nota.
+              Impostalo da &quot;⚙️ Gestisci tipi&quot; se vuoi vederlo lì.
+            </p>
+          )}
 
           <div className="flex gap-2">
             <button
