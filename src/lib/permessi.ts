@@ -18,6 +18,7 @@ export type PaginaId =
   | "registro-fatture"
   | "prima-nota"
   | "corrispettivi"
+  | "buoni-pasto"
   | "ditte";
 
 export const PAGINE: { id: PaginaId; href: string; label: string }[] = [
@@ -31,6 +32,7 @@ export const PAGINE: { id: PaginaId; href: string; label: string }[] = [
   { id: "registro-fatture", href: "/registro-fatture", label: "Registro Fatture" },
   { id: "prima-nota", href: "/prima-nota", label: "Prima Nota" },
   { id: "corrispettivi", href: "/corrispettivi", label: "Corrispettivi" },
+  { id: "buoni-pasto", href: "/buoni-pasto", label: "Buoni Pasto" },
   { id: "ditte", href: "/ditte", label: "Ditte" },
 ];
 

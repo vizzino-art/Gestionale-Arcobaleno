@@ -149,3 +149,31 @@ export type SaldoConto = {
   saldo_attuale: number;
   saldo_previsto: number;
 };
+
+// ----------------------------------------------------------------------------
+// BUONI PASTO (vedi supabase/crea-buoni-pasto.sql) — sezione di sola
+// lettura/monitoraggio verso Prima Nota, richiesta da Mauro l'8/10.
+// ----------------------------------------------------------------------------
+
+export type TipoBuonoPasto = {
+  id: string;
+  nome: string;
+  conto_atteso_id: string | null;
+  ordine: number;
+  created_at: string;
+};
+
+export type RendicontoBuonoPasto = {
+  id: string;
+  tipo_id: string;
+  numero_documento: string | null;
+  data_documento: string | null;
+  periodo_da: string | null;
+  periodo_a: string | null;
+  numero_ticket: number | null;
+  totale_lordo: number | null;
+  importo_netto: number | null;
+  data_pagamento_prevista: string | null;
+  note: string | null;
+  created_at: string;
+};

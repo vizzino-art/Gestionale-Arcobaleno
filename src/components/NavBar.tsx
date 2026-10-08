@@ -18,7 +18,7 @@ const GRUPPI: string[][] = [
   ["/ordina", "/riepilogo"],
   ["/pannello", "/confronta"],
   ["/registra-bolla", "/storico-bolle", "/registro-fatture"],
-  ["/prima-nota", "/corrispettivi"],
+  ["/prima-nota", "/corrispettivi", "/buoni-pasto"],
 ];
 
 function raggruppa(voci: Voce[]): Voce[][] {

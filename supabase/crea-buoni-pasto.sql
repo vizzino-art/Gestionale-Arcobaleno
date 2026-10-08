@@ -1,0 +1,1 @@
+-- (file solo di riferimento nel repo — l'hai già eseguito tu nell'SQL Editor di Supabase)
