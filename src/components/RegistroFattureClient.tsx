@@ -618,6 +618,36 @@ export function RegistroFattureClient({
   const [correzioneFornitoreInCorso, setCorrezioneFornitoreInCorso] = useState<Record<string, boolean>>({});
   const [correzioneFornitoreErrore, setCorrezioneFornitoreErrore] = useState<Record<string, string>>({});
 
+  // Correzione del NOME fornitore scritto in fattura (testo libero, diverso
+  // dal collegamento sopra: quello serve ad abbinare bolle/prodotti a un
+  // fornitore già a sistema, questo serve solo a correggere l'intestazione
+  // quando la fattura elettronica arriva senza "Denominazione" compilata e
+  // il sistema scrive "Fornitore sconosciuto" — Mauro conosce comunque il
+  // fornitore e vuole poterlo scrivere lui.
+  const [nomeFornitoreCorrezione, setNomeFornitoreCorrezione] = useState<Record<string, string>>({});
+  const [correzioneNomeInCorso, setCorrezioneNomeInCorso] = useState<Record<string, boolean>>({});
+  const [correzioneNomeErrore, setCorrezioneNomeErrore] = useState<Record<string, string>>({});
+
+  async function correggiNomeFornitore(f: FatturaSalvata, nuovoNome: string) {
+    setCorrezioneNomeErrore((prec) => ({ ...prec, [f.id]: "" }));
+    setCorrezioneNomeInCorso((prec) => ({ ...prec, [f.id]: true }));
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("fatture_ricevute")
+        .update({ fornitore_nome: nuovoNome })
+        .eq("id", f.id);
+      if (error) {
+        setCorrezioneNomeErrore((prec) => ({ ...prec, [f.id]: `Errore: ${error.message}` }));
+        return;
+      }
+      setFatture((prec) => prec.map((x) => (x.id === f.id ? { ...x, fornitore_nome: nuovoNome } : x)));
+      setNomeFornitoreCorrezione((prec) => ({ ...prec, [f.id]: nuovoNome }));
+    } finally {
+      setCorrezioneNomeInCorso((prec) => ({ ...prec, [f.id]: false }));
+    }
+  }
+
   async function correggiFornitore(f: FatturaSalvata, nuovoFornitoreId: string) {
     setCorrezioneFornitoreErrore((prec) => ({ ...prec, [f.id]: "" }));
     setCorrezioneFornitoreInCorso((prec) => ({ ...prec, [f.id]: true }));
@@ -1159,6 +1189,37 @@ export function RegistroFattureClient({
                 >
                   Stampa / Salva come PDF
                 </button>
+
+                <div className="mt-3 border-t border-neutral-100 pt-3">
+                  <label className="mb-1 block text-xs font-medium text-neutral-500">
+                    Nome fornitore (come letto dalla fattura elettronica — correggilo qui se sbagliato o
+                    mancante)
+                  </label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="text"
+                      value={nomeFornitoreCorrezione[f.id] ?? f.fornitore_nome}
+                      onChange={(e) =>
+                        setNomeFornitoreCorrezione((prec) => ({ ...prec, [f.id]: e.target.value }))
+                      }
+                      className="w-64 rounded-md border border-neutral-300 px-2 py-1 text-xs"
+                      placeholder="Nome fornitore"
+                    />
+                    {(nomeFornitoreCorrezione[f.id] ?? f.fornitore_nome).trim() !== f.fornitore_nome &&
+                      (nomeFornitoreCorrezione[f.id] ?? "").trim() !== "" && (
+                        <button
+                          onClick={() => correggiNomeFornitore(f, (nomeFornitoreCorrezione[f.id] ?? "").trim())}
+                          disabled={correzioneNomeInCorso[f.id]}
+                          className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                        >
+                          {correzioneNomeInCorso[f.id] ? "Salvo…" : "Salva nome"}
+                        </button>
+                      )}
+                  </div>
+                  {correzioneNomeErrore[f.id] && (
+                    <p className="mt-1 text-xs text-red-700">{correzioneNomeErrore[f.id]}</p>
+                  )}
+                </div>
 
                 {f.rate_pagamento_fatture.length > 0 && (
                   <div className="mt-3 space-y-2 border-t border-neutral-100 pt-3">
