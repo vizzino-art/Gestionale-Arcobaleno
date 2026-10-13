@@ -23,6 +23,11 @@ type Props = {
   conti: Conto[];
   bolle: Bolla[];
   collegamentiIniziali: CollegamentoBolla[];
+  // Tutte le rate non ancora pagate, di QUALSIASI fattura anche più vecchia
+  // della finestra recente caricata in fattureIniziali (vedi commento sopra
+  // fattureIniziali nel server) — query separata apposta per non perdere di
+  // vista una scadenza futura di una fattura vecchia.
+  rateNonPagateIniziali: RataNonPagata[];
 };
 
 type RigaEstratta = {
@@ -97,6 +102,15 @@ type RataSalvata = {
   // l'ultima volta quando il metodo era Bonifico/Altro. Array per come lo
   // restituisce Supabase, ma è sempre al più uno per via del vincolo unico.
   movimenti_prima_nota?: { conto_id: string }[];
+};
+
+// Riga della vista "Scadenze da pagare": una rata non pagata con già
+// risolti fattura/fornitore/numero, qualunque sia la data della fattura —
+// vedi il commento su rateNonPagateIniziali nei Props.
+export type RataNonPagata = RataSalvata & {
+  fatturaId: string;
+  fornitoreNome: string;
+  numeroFattura: string;
 };
 
 // Metodi di pagamento che si abbinano sempre allo stesso conto di Prima
@@ -489,12 +503,22 @@ function FormPagamentoRata({
   );
 }
 
+function ordinaRateNonPagate(elenco: RataNonPagata[]): RataNonPagata[] {
+  return [...elenco].sort((a, b) => {
+    if (a.data_scadenza === b.data_scadenza) return 0;
+    if (!a.data_scadenza) return 1;
+    if (!b.data_scadenza) return -1;
+    return a.data_scadenza < b.data_scadenza ? -1 : 1;
+  });
+}
+
 export function RegistroFattureClient({
   fornitori,
   fattureIniziali,
   conti,
   bolle,
   collegamentiIniziali,
+  rateNonPagateIniziali,
 }: Props) {
   const [caricamento, setCaricamento] = useState(false);
   const [errore, setErrore] = useState<string | null>(null);
@@ -503,6 +527,10 @@ export function RegistroFattureClient({
   const [fornitoreScelto, setFornitoreScelto] = useState<string>("");
   const [salvataggio, setSalvataggio] = useState(false);
   const [messaggioSalvataggio, setMessaggioSalvataggio] = useState<string | null>(null);
+  // Solo le fatture recenti (ultimi 6 mesi, vedi server) — per quelle più
+  // vecchie c'è la ricerca qui sotto, che pesca dal database senza doverle
+  // caricare tutte in anticipo (motivo: con tutto lo storico la pagina si
+  // era fatta lenta ad aprirsi, richiesto da Mauro il 13/10).
   const [fatture, setFatture] = useState<FatturaSalvata[]>(() =>
     [...fattureIniziali].sort(comparaFatture)
   );
@@ -510,6 +538,53 @@ export function RegistroFattureClient({
   const [listaFornitori, setListaFornitori] = useState<Fornitore[]>(fornitori);
   const [codaFile, setCodaFile] = useState<File[]>([]);
   const [trascinamentoAttivo, setTrascinamentoAttivo] = useState(false);
+
+  // Ricerca fatture più vecchie dei 6 mesi caricati di default: query diretta
+  // al database (non limitata nel tempo), sostituisce la lista mostrata
+  // finché non viene svuotata.
+  const [ricercaTesto, setRicercaTesto] = useState("");
+  const [risultatiRicerca, setRisultatiRicerca] = useState<FatturaSalvata[] | null>(null);
+  const [ricercaInCorso, setRicercaInCorso] = useState(false);
+  const [ricercaErrore, setRicercaErrore] = useState<string | null>(null);
+  const fattureDaMostrare = risultatiRicerca ?? fatture;
+
+  async function cercaFattureVecchie() {
+    // Niente virgole/parentesi: romperebbero la sintassi del filtro .or() di
+    // PostgREST più sotto — non servono comunque per cercare un nome/numero/
+    // P.IVA.
+    const termine = ricercaTesto.trim().replace(/[,()]/g, "");
+    if (!termine) {
+      setRisultatiRicerca(null);
+      setRicercaErrore(null);
+      return;
+    }
+    setRicercaErrore(null);
+    setRicercaInCorso(true);
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("fatture_ricevute")
+        .select("*, righe_fatture_ricevute(*), rate_pagamento_fatture(*, movimenti_prima_nota(conto_id))")
+        .or(`fornitore_nome.ilike.%${termine}%,numero.ilike.%${termine}%,fornitore_piva.ilike.%${termine}%`)
+        .order("data", { ascending: false })
+        .order("numero_linea", { foreignTable: "righe_fatture_ricevute", ascending: true })
+        .order("numero_rata", { foreignTable: "rate_pagamento_fatture", ascending: true })
+        .limit(100);
+      if (error) {
+        setRicercaErrore(`Errore nella ricerca: ${error.message}`);
+        return;
+      }
+      setRisultatiRicerca((data ?? []) as unknown as FatturaSalvata[]);
+    } finally {
+      setRicercaInCorso(false);
+    }
+  }
+
+  function azzeraRicerca() {
+    setRicercaTesto("");
+    setRisultatiRicerca(null);
+    setRicercaErrore(null);
+  }
 
   const fornitoriPerPiva = useMemo(() => {
     const mappa = new Map<string, Fornitore>();
@@ -519,37 +594,42 @@ export function RegistroFattureClient({
     return mappa;
   }, [listaFornitori]);
 
-  // Passo B — vista d'insieme: tutte le rate non ancora pagate di tutte le
-  // fatture, più recenti scadenze prima (quelle senza scadenza in fondo).
-  // Calcolata dalle fatture già in stato, nessuna query separata.
-  const rateNonPagate = useMemo(() => {
-    const elenco: (RataSalvata & { fatturaId: string; fornitoreNome: string; numeroFattura: string })[] =
-      [];
-    for (const f of fatture) {
-      for (const r of f.rate_pagamento_fatture) {
-        if (!r.data_pagamento_effettivo) {
-          elenco.push({ ...r, fatturaId: f.id, fornitoreNome: f.fornitore_nome, numeroFattura: f.numero });
-        }
-      }
-    }
-    elenco.sort((a, b) => {
-      if (a.data_scadenza === b.data_scadenza) return 0;
-      if (!a.data_scadenza) return 1;
-      if (!b.data_scadenza) return -1;
-      return a.data_scadenza < b.data_scadenza ? -1 : 1;
-    });
-    return elenco;
-  }, [fatture]);
+  // Passo B — vista d'insieme: tutte le rate non ancora pagate, di QUALSIASI
+  // fattura anche più vecchia dei 6 mesi caricati sopra (query server
+  // separata, vedi rateNonPagateIniziali nei Props) — così una scadenza
+  // futura di una fattura vecchia non sparisce mai da qui, anche se quella
+  // fattura non è nella lista "Fatture registrate" finché non la cerchi.
+  const [rateNonPagate, setRateNonPagate] = useState<RataNonPagata[]>(() =>
+    ordinaRateNonPagate(rateNonPagateIniziali)
+  );
 
   const oggiIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
-  function rataAggiornata(rata: RataSalvata) {
+  function rataAggiornata(
+    rata: RataSalvata,
+    contesto: { fatturaId: string; fornitoreNome: string; numeroFattura: string }
+  ) {
     setFatture((prec) =>
       prec.map((f) => ({
         ...f,
         rate_pagamento_fatture: f.rate_pagamento_fatture.map((r) => (r.id === rata.id ? rata : r)),
       }))
     );
+    setRisultatiRicerca((prec) =>
+      prec
+        ? prec.map((f) => ({
+            ...f,
+            rate_pagamento_fatture: f.rate_pagamento_fatture.map((r) => (r.id === rata.id ? rata : r)),
+          }))
+        : prec
+    );
+    setRateNonPagate((prec) => {
+      const senzaQuesta = prec.filter((r) => r.id !== rata.id);
+      // Pagata adesso: esce dall'elenco. Pagamento tolto (data svuotata):
+      // ci rientra, con lo stesso fornitore/fattura di prima.
+      if (rata.data_pagamento_effettivo) return senzaQuesta;
+      return ordinaRateNonPagate([...senzaQuesta, { ...rata, ...contesto }]);
+    });
   }
 
   // Passo C — confronto con le bolle, calcolato al volo quando Mauro lo
@@ -944,7 +1024,13 @@ export function RegistroFattureClient({
                   fornitoreNome={r.fornitoreNome}
                   numeroFattura={r.numeroFattura}
                   conti={conti}
-                  onSalvata={rataAggiornata}
+                  onSalvata={(nuovaRata) =>
+                    rataAggiornata(nuovaRata, {
+                      fatturaId: r.fatturaId,
+                      fornitoreNome: r.fornitoreNome,
+                      numeroFattura: r.numeroFattura,
+                    })
+                  }
                 />
               </div>
             );
@@ -1114,9 +1200,50 @@ export function RegistroFattureClient({
       )}
 
       <h2 className="mb-2 text-base font-semibold text-neutral-900">Fatture registrate</h2>
-      {fatture.length === 0 && <p className="text-sm text-neutral-500">Nessuna fattura ancora registrata.</p>}
+      <p className="mb-2 text-xs text-neutral-500">
+        Qui sotto vedi solo le fatture degli ultimi 6 mesi (per restare veloce). Per trovarne una più
+        vecchia, cerca per fornitore, numero fattura o P.IVA:
+      </p>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <input
+          type="text"
+          value={ricercaTesto}
+          onChange={(e) => setRicercaTesto(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") cercaFattureVecchie();
+          }}
+          placeholder="Fornitore, numero fattura o P.IVA…"
+          className="w-64 rounded-md border border-neutral-300 px-2 py-1.5 text-sm outline-none focus:border-neutral-500"
+        />
+        <button
+          onClick={cercaFattureVecchie}
+          disabled={ricercaInCorso}
+          className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+        >
+          {ricercaInCorso ? "Cerco…" : "🔍 Cerca"}
+        </button>
+        {risultatiRicerca !== null && (
+          <button
+            onClick={azzeraRicerca}
+            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+          >
+            ✕ Torna alle fatture recenti
+          </button>
+        )}
+      </div>
+      {ricercaErrore && <p className="mb-3 text-sm text-red-700">{ricercaErrore}</p>}
+      {risultatiRicerca !== null && (
+        <p className="mb-2 text-xs text-neutral-500">
+          {risultatiRicerca.length === 0
+            ? `Nessuna fattura trovata per "${ricercaTesto.trim()}".`
+            : `${risultatiRicerca.length} fattura${risultatiRicerca.length === 1 ? "" : "e"} trovata${risultatiRicerca.length === 1 ? "" : "e"} per "${ricercaTesto.trim()}".`}
+        </p>
+      )}
+      {fattureDaMostrare.length === 0 && risultatiRicerca === null && (
+        <p className="text-sm text-neutral-500">Nessuna fattura ancora registrata.</p>
+      )}
       <div className="space-y-2">
-        {fatture.map((f) => (
+        {fattureDaMostrare.map((f) => (
           <div key={f.id} className="rounded-lg border border-neutral-200 bg-white">
             <button
               onClick={() => setEspansa(espansa === f.id ? null : f.id)}
@@ -1235,7 +1362,13 @@ export function RegistroFattureClient({
                           fornitoreNome={f.fornitore_nome}
                           numeroFattura={f.numero}
                           conti={conti}
-                          onSalvata={rataAggiornata}
+                          onSalvata={(nuovaRata) =>
+                            rataAggiornata(nuovaRata, {
+                              fatturaId: f.id,
+                              fornitoreNome: f.fornitore_nome,
+                              numeroFattura: f.numero,
+                            })
+                          }
                         />
                       </div>
                     ))}
