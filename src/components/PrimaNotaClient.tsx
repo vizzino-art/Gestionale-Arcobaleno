@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Conto, Controparte, MovimentoPrimaNota, SaldoConto } from "@/lib/types";
+import type { RigaBustaPaga } from "@/lib/buste-paga";
 
 type Props = {
   conti: Conto[];
@@ -17,7 +18,31 @@ type Props = {
 // Causali ricorrenti viste nel vecchio file Excel: suggerite nel campo
 // causale (datalist) così non vanno riscritte ogni volta, ma resta comunque
 // un campo libero — non è una lista chiusa.
-const CAUSALI_SUGGERITE = ["Incasso del Giorno", "Versamento Contante", "Prelievo Contanti"];
+// Le voci "F24 ..." (13/10) servono solo a far iniziare sempre allo stesso
+// modo la causale di un F24 inserito a mano, così la ricerca testuale qui
+// sotto (digitando "F24") li trova e li somma tutti insieme — niente
+// lettura automatica per gli F24, scelta esplicita di Mauro.
+const CAUSALI_SUGGERITE = [
+  "Incasso del Giorno",
+  "Versamento Contante",
+  "Prelievo Contanti",
+  "F24 INPS dipendenti",
+  "F24 Erario",
+  "F24 IVA",
+  "F24 IRAP",
+];
+
+async function leggiComeBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const risultato = reader.result as string;
+      resolve(risultato.split(",")[1] ?? "");
+    };
+    reader.onerror = () => reject(new Error("Lettura del file fallita."));
+    reader.readAsDataURL(file);
+  });
+}
 
 function formattaEuro(v: number): string {
   return v.toLocaleString("it-IT", { style: "currency", currency: "EUR" });
@@ -216,11 +241,17 @@ export function PrimaNotaClient({
   // --- Elenco / filtri -----------------------------------------------------
   const [filtroContoId, setFiltroContoId] = useState("");
   const [filtroStato, setFiltroStato] = useState("");
+  // Ricerca libera nella causale (13/10, richiesta per ritrovare/sommare gli
+  // F24 senza una pagina a sé — vedi CAUSALI_SUGGERITE sopra): scrivendo
+  // "F24" si vedono solo quei movimenti, col totale calcolato qui sotto
+  // (totaleFiltrato). Con la ricerca attiva togliamo il limite di 200 righe
+  // altrimenti un F24 di inizio anno potrebbe restare fuori dal totale.
+  const [filtroTesto, setFiltroTesto] = useState("");
   const [caricandoLista, setCaricandoLista] = useState(false);
   const [erroreEliminazione, setErroreEliminazione] = useState<Record<string, string>>({});
   const [eliminandoId, setEliminandoId] = useState<string | null>(null);
 
-  async function ricaricaMovimenti(nuovoContoId: string, nuovoStato: string) {
+  async function ricaricaMovimenti(nuovoContoId: string, nuovoStato: string, nuovoTesto: string = filtroTesto) {
     setCaricandoLista(true);
     try {
       const supabase = createClient();
@@ -228,10 +259,17 @@ export function PrimaNotaClient({
         .from("movimenti_prima_nota")
         .select("*")
         .order("data", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(200);
+        .order("created_at", { ascending: false });
       if (nuovoContoId) query = query.eq("conto_id", nuovoContoId);
       if (nuovoStato) query = query.eq("stato", nuovoStato);
+      const testo = nuovoTesto.trim();
+      if (testo) {
+        // Niente virgole/parentesi: romperebbero la sintassi del filtro di
+        // PostgREST — non servono comunque per cercare dentro una causale.
+        query = query.ilike("causale", `%${testo.replace(/[,()]/g, "")}%`);
+      } else {
+        query = query.limit(200);
+      }
       const { data: righe, error } = await query;
       if (!error) setMovimenti((righe ?? []) as MovimentoPrimaNota[]);
     } finally {
@@ -306,6 +344,122 @@ export function PrimaNotaClient({
       setErroreImportazione(e instanceof Error ? e.message : "Errore di rete durante l'importazione.");
     } finally {
       setImportandoIncassi(false);
+    }
+  }
+
+  // --- Importazione stipendi dal PDF delle buste paga (13/10) --------------
+  // Carichi il PDF mensile con tutte le buste paga (una pagina per
+  // dipendente): il server lo legge da solo (src/lib/buste-paga.ts) e qui
+  // mostriamo l'elenco da controllare PRIMA di salvare nulla — mai creare
+  // movimenti senza che Mauro li veda, stesso principio già seguito in
+  // Registro Fatture. Esce sempre da un conto unico scelto una volta sola
+  // (di solito Volksbank, come nei pagamenti reali), con un'unica data per
+  // tutto il lotto (il cedolino riporta solo il mese di competenza, non il
+  // giorno in cui lo stipendio è stato davvero bonificato).
+  const contoVolksbankId = conti.find((c) => c.nome === "Volksbank")?.id ?? primoContoId;
+
+  const [mostraPannelloStipendi, setMostraPannelloStipendi] = useState(false);
+  const [leggendoStipendi, setLeggendoStipendi] = useState(false);
+  const [erroreLetturaStipendi, setErroreLetturaStipendi] = useState<string | null>(null);
+  const [righeStipendi, setRigheStipendi] = useState<RigaBustaPaga[] | null>(null);
+  const [righeStipendiEscluse, setRigheStipendiEscluse] = useState<Set<number>>(new Set());
+  const [nomiStipendi, setNomiStipendi] = useState<Record<number, string>>({});
+  const [dataPagamentoStipendi, setDataPagamentoStipendi] = useState(oggiIso());
+  const [contoStipendiId, setContoStipendiId] = useState(contoVolksbankId);
+  const [duplicatoStipendi, setDuplicatoStipendi] = useState(false);
+  const [duplicatoStipendiConfermato, setDuplicatoStipendiConfermato] = useState(false);
+  const [importandoStipendi, setImportandoStipendi] = useState(false);
+  const [risultatoStipendi, setRisultatoStipendi] = useState<string | null>(null);
+  const [erroreImportazioneStipendi, setErroreImportazioneStipendi] = useState<string | null>(null);
+
+  async function leggiFileStipendi(file: File) {
+    setLeggendoStipendi(true);
+    setErroreLetturaStipendi(null);
+    setRigheStipendi(null);
+    setRisultatoStipendi(null);
+    setErroreImportazioneStipendi(null);
+    try {
+      const contenuto = await leggiComeBase64(file);
+      const risposta = await fetch("/api/leggi-buste-paga", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contenuto, nomeFile: file.name }),
+      });
+      const corpo = await risposta.json();
+      if (!risposta.ok) {
+        setErroreLetturaStipendi(corpo.errore ?? "Errore sconosciuto durante la lettura del PDF.");
+        return;
+      }
+      const righe = corpo.righe as RigaBustaPaga[];
+      setRigheStipendi(righe);
+      // Default: nome suggerito (vedi buste-paga.ts), e si escludono da sole
+      // le pagine a netto zero (nessuno stipendio da registrare quel mese)
+      // o non lette bene — Mauro può comunque reincluderle a mano.
+      setRigheStipendiEscluse(
+        new Set(righe.filter((r) => !r.netto || r.avviso).map((r) => r.pagina))
+      );
+      setNomiStipendi(
+        Object.fromEntries(righe.map((r) => [r.pagina, r.nomeSuggerito ?? ""]))
+      );
+      const primaRigaValida = righe.find((r) => r.mese && r.anno);
+      if (primaRigaValida?.mese && primaRigaValida?.anno) {
+        await controllaDuplicatoStipendi(primaRigaValida.mese, primaRigaValida.anno);
+      }
+    } catch (e) {
+      setErroreLetturaStipendi(e instanceof Error ? e.message : "Errore di rete durante la lettura del PDF.");
+    } finally {
+      setLeggendoStipendi(false);
+    }
+  }
+
+  async function controllaDuplicatoStipendi(mese: string, anno: number) {
+    setDuplicatoStipendiConfermato(false);
+    const supabase = createClient();
+    const { count } = await supabase
+      .from("movimenti_prima_nota")
+      .select("id", { count: "exact", head: true })
+      .ilike("causale", "Stipendio%")
+      .ilike("causale", `%mese di ${mese} ${anno}%`);
+    setDuplicatoStipendi((count ?? 0) > 0);
+  }
+
+  async function importaStipendi() {
+    if (!righeStipendi) return;
+    const righeDaImportare = righeStipendi.filter(
+      (r) => !righeStipendiEscluse.has(r.pagina) && r.netto != null && r.netto > 0 && r.mese && r.anno
+    );
+    if (righeDaImportare.length === 0) {
+      setErroreImportazioneStipendi("Nessuno stipendio selezionato da importare.");
+      return;
+    }
+    setImportandoStipendi(true);
+    setErroreImportazioneStipendi(null);
+    setRisultatoStipendi(null);
+    try {
+      const supabase = createClient();
+      const inserimenti = righeDaImportare.map((r) => ({
+        data: dataPagamentoStipendi,
+        causale: `Stipendio ${(nomiStipendi[r.pagina] ?? "").trim() || r.nomeSuggerito || "?"} mese di ${r.mese} ${r.anno}`,
+        conto_id: contoStipendiId,
+        importo: -(r.netto as number),
+        stato: "effettivo" as const,
+      }));
+      const { error } = await supabase.from("movimenti_prima_nota").insert(inserimenti);
+      if (error) {
+        setErroreImportazioneStipendi(error.message);
+        return;
+      }
+      setRisultatoStipendi(`${inserimenti.length} stipendi registrati.`);
+      setRigheStipendi(null);
+      setRigheStipendiEscluse(new Set());
+      setNomiStipendi({});
+      setDuplicatoStipendi(false);
+      setDuplicatoStipendiConfermato(false);
+      await Promise.all([ricaricaMovimenti(filtroContoId, filtroStato), ricaricaSaldi()]);
+    } catch (e) {
+      setErroreImportazioneStipendi(e instanceof Error ? e.message : "Errore di rete durante l'importazione.");
+    } finally {
+      setImportandoStipendi(false);
     }
   }
 
@@ -388,7 +542,7 @@ export function PrimaNotaClient({
         })}
       </div>
 
-      <div className="mb-6 flex flex-wrap items-center gap-2">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <button
           onClick={importaIncassi}
           disabled={importandoIncassi}
@@ -398,7 +552,152 @@ export function PrimaNotaClient({
         </button>
         {risultatoImportazione && <span className="text-xs text-neutral-600">{risultatoImportazione}</span>}
         {erroreImportazione && <span className="text-xs text-red-600">Errore: {erroreImportazione}</span>}
+
+        <button
+          onClick={() => setMostraPannelloStipendi((prec) => !prec)}
+          className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+        >
+          📄 Importa stipendi
+        </button>
       </div>
+
+      {mostraPannelloStipendi && (
+        <div className="mb-6 rounded-lg border border-neutral-200 bg-white p-4">
+          <h2 className="mb-1 text-base font-semibold text-neutral-900">Importa stipendi dal PDF buste paga</h2>
+          <p className="mb-3 text-xs text-neutral-500">
+            Carica il PDF con tutte le buste paga del mese (una pagina per dipendente, come lo scarichi
+            sempre): leggo da solo nome e netto a pagare di ciascuno, tu controlli l&apos;elenco prima di
+            salvare nulla.
+          </p>
+
+          <input
+            type="file"
+            accept=".pdf"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) leggiFileStipendi(file);
+              e.target.value = "";
+            }}
+            disabled={leggendoStipendi}
+            className="mb-3 block text-sm"
+          />
+
+          {leggendoStipendi && <p className="mb-2 text-sm text-neutral-500">Leggo il PDF…</p>}
+          {erroreLetturaStipendi && (
+            <p className="mb-3 rounded-lg bg-red-50 p-2 text-xs text-red-700">Errore: {erroreLetturaStipendi}</p>
+          )}
+
+          {righeStipendi && (
+            <>
+              {duplicatoStipendi && (
+                <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3">
+                  <p className="mb-1 text-sm font-medium text-amber-900">
+                    ⚠️ Per questo mese risultano già stipendi registrati.
+                  </p>
+                  <label className="flex items-center gap-1.5 text-xs text-amber-800">
+                    <input
+                      type="checkbox"
+                      checked={duplicatoStipendiConfermato}
+                      onChange={(e) => setDuplicatoStipendiConfermato(e.target.checked)}
+                    />
+                    Ho controllato, non è un doppione: importa comunque
+                  </label>
+                </div>
+              )}
+
+              <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="text-xs text-neutral-500">Data pagamento (uguale per tutti)</label>
+                  <input
+                    type="date"
+                    value={dataPagamentoStipendi}
+                    onChange={(e) => setDataPagamentoStipendi(e.target.value)}
+                    className="mt-0.5 block w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-neutral-500">Conto di uscita</label>
+                  <select
+                    value={contoStipendiId}
+                    onChange={(e) => setContoStipendiId(e.target.value)}
+                    className="mt-0.5 block w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+                  >
+                    {conti.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="mb-3 space-y-1">
+                {righeStipendi.map((r) => {
+                  const esclusa = righeStipendiEscluse.has(r.pagina);
+                  return (
+                    <div
+                      key={r.pagina}
+                      className={`flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 ${
+                        esclusa ? "border-neutral-200 bg-neutral-50 opacity-60" : "border-neutral-200 bg-white"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!esclusa}
+                        onChange={(e) => {
+                          setRigheStipendiEscluse((prec) => {
+                            const copia = new Set(prec);
+                            if (e.target.checked) copia.delete(r.pagina);
+                            else copia.add(r.pagina);
+                            return copia;
+                          });
+                        }}
+                      />
+                      <input
+                        type="text"
+                        value={nomiStipendi[r.pagina] ?? ""}
+                        onChange={(e) =>
+                          setNomiStipendi((prec) => ({ ...prec, [r.pagina]: e.target.value }))
+                        }
+                        placeholder="Nome in causale"
+                        className="w-32 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                      />
+                      <span className="text-xs text-neutral-400">pag. {r.pagina}</span>
+                      <span className="min-w-0 flex-1 truncate text-xs text-neutral-500">
+                        {r.nomeCompleto ?? "nome non letto"} — {r.mese ?? "?"} {r.anno ?? ""}
+                      </span>
+                      {r.avviso && <span className="text-xs text-red-600">{r.avviso}</span>}
+                      <span className="text-sm font-medium text-neutral-900">
+                        {r.netto != null ? formattaEuro(r.netto) : "—"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <button
+                onClick={importaStipendi}
+                disabled={
+                  importandoStipendi || (duplicatoStipendi && !duplicatoStipendiConfermato)
+                }
+                className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {importandoStipendi
+                  ? "Importazione in corso…"
+                  : `Importa ${
+                      righeStipendi.filter((r) => !righeStipendiEscluse.has(r.pagina) && r.netto && r.netto > 0)
+                        .length
+                    } stipendi`}
+              </button>
+            </>
+          )}
+
+          {risultatoStipendi && <p className="mt-2 text-xs text-neutral-600">{risultatoStipendi}</p>}
+          {erroreImportazioneStipendi && (
+            <p className="mt-2 text-xs text-red-600">Errore: {erroreImportazioneStipendi}</p>
+          )}
+        </div>
+      )}
 
       {daConfermare.length > 0 && (
         <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
@@ -601,9 +900,29 @@ export function PrimaNotaClient({
           <option value="effettivo">Solo già avvenuti</option>
           <option value="pianificato">Solo pianificati</option>
         </select>
+        <input
+          type="text"
+          value={filtroTesto}
+          onChange={(e) => {
+            setFiltroTesto(e.target.value);
+            ricaricaMovimenti(filtroContoId, filtroStato, e.target.value);
+          }}
+          placeholder="Cerca nella causale (es. F24)…"
+          className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+        />
       </div>
 
       {caricandoLista && <p className="mb-2 text-sm text-neutral-500">Caricamento…</p>}
+
+      {!caricandoLista && filtroTesto.trim() && (
+        <p className="mb-2 text-xs text-neutral-500">
+          {movimenti.length} movimento{movimenti.length === 1 ? "" : "i"} trovato{movimenti.length === 1 ? "" : "i"}{" "}
+          per &ldquo;{filtroTesto.trim()}&rdquo; — totale:{" "}
+          <span className="font-medium text-neutral-900">
+            {formattaEuro(movimenti.reduce((acc, m) => acc + m.importo, 0))}
+          </span>
+        </p>
+      )}
 
       {movimenti.length === 0 && !caricandoLista && (
         <p className="text-sm text-neutral-500">Nessun movimento trovato.</p>
