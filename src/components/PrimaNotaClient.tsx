@@ -498,6 +498,28 @@ export function PrimaNotaClient({
     .filter((s) => s.conto_nome !== "Carta di credito")
     .reduce((acc, s) => acc + s.saldo_previsto, 0);
 
+  // Saldo progressivo nell'elenco qui sotto (13/10, richiesto da Mauro): ha
+  // senso solo guardando UN conto alla volta, con tutti i suoi movimenti in
+  // vista — niente filtro per stato o testo che nasconda righe di mezzo,
+  // altrimenti il calcolo salterebbe dei pezzi. Conta anche i "pianificato"
+  // (scelta esplicita di Mauro): si parte dal saldo previsto di quel conto
+  // (che li include già) e si scende riga per riga, dalla più recente alla
+  // più vecchia — l'elenco arriva già ordinato così da ricaricaMovimenti.
+  const saldoContoSelezionato = filtroContoId ? saldi.find((s) => s.conto_id === filtroContoId) : undefined;
+  const mostraSaldoProgressivo =
+    Boolean(filtroContoId) && !filtroStato && !filtroTesto.trim() && saldoContoSelezionato !== undefined;
+  // Niente variabile mutata riga per riga (il progetto usa il React
+  // Compiler, che vieta le riassegnazioni durante il render): il saldo di
+  // una riga si ricava sottraendo dal saldo previsto la somma degli importi
+  // di tutte le righe più recenti di lei (quelle sopra, indici 0..indice-1).
+  const righeConSaldo = movimenti.map((m, indice) => {
+    if (!mostraSaldoProgressivo || !saldoContoSelezionato) {
+      return { movimento: m, saldoProgressivo: null as number | null };
+    }
+    const sommaRigheSopra = movimenti.slice(0, indice).reduce((tot, riga) => tot + riga.importo, 0);
+    return { movimento: m, saldoProgressivo: saldoContoSelezionato.saldo_previsto - sommaRigheSopra };
+  });
+
   return (
     <div>
       <div className="mb-3 rounded-lg border border-neutral-900 bg-neutral-900 p-3 text-white">
@@ -928,47 +950,75 @@ export function PrimaNotaClient({
         <p className="text-sm text-neutral-500">Nessun movimento trovato.</p>
       )}
 
-      <div className="space-y-1">
-        {movimenti.map((m) => (
-          <div
-            key={m.id}
-            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2"
-          >
-            <div className="min-w-0">
-              <p className="text-sm text-neutral-900">
-                {formattaData(m.data)} — {m.causale}
-                {m.trasferimento_id && (
-                  <span className="ml-1.5 rounded-full bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-600">
-                    trasferimento
-                  </span>
+      {movimenti.length > 0 && (
+        <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
+                <th className="px-3 py-2 font-medium">Data</th>
+                <th className="px-3 py-2 font-medium">Causale</th>
+                {!filtroContoId && <th className="px-3 py-2 font-medium">Conto</th>}
+                <th className="px-3 py-2 font-medium">Stato</th>
+                <th className="px-3 py-2 text-right font-medium">Entrata</th>
+                <th className="px-3 py-2 text-right font-medium">Uscita</th>
+                {mostraSaldoProgressivo && (
+                  <th className="px-3 py-2 text-right font-medium">Saldo progressivo</th>
                 )}
-                {m.stato === "pianificato" && (
-                  <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">
-                    pianificato
-                  </span>
-                )}
-              </p>
-              <p className="text-xs text-neutral-500">{contiPerId.get(m.conto_id)?.nome ?? "?"}</p>
-              {erroreEliminazione[m.id] && (
-                <p className="text-xs text-red-600">Errore: {erroreEliminazione[m.id]}</p>
-              )}
-            </div>
-            <div className="flex items-center gap-3">
-              <span className={m.importo < 0 ? "text-sm font-medium text-red-600" : "text-sm font-medium text-green-700"}>
-                {formattaEuro(m.importo)}
-              </span>
-              <button
-                onClick={() => eliminaMovimento(m)}
-                disabled={eliminandoId === m.id}
-                className="text-xs text-neutral-400 hover:text-red-600 disabled:opacity-50"
-                title="Elimina"
-              >
-                {eliminandoId === m.id ? "…" : "✕"}
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+                <th className="px-2 py-2" />
+              </tr>
+            </thead>
+            <tbody>
+              {righeConSaldo.map(({ movimento: m, saldoProgressivo }) => (
+                <tr key={m.id} className="border-b border-neutral-100 last:border-0">
+                  <td className="whitespace-nowrap px-3 py-2 text-neutral-500">{formattaData(m.data)}</td>
+                  <td className="px-3 py-2 text-neutral-900">
+                    {m.causale}
+                    {m.trasferimento_id && (
+                      <span className="ml-1.5 rounded-full bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-600">
+                        trasferimento
+                      </span>
+                    )}
+                    {erroreEliminazione[m.id] && (
+                      <p className="text-xs text-red-600">Errore: {erroreEliminazione[m.id]}</p>
+                    )}
+                  </td>
+                  {!filtroContoId && (
+                    <td className="px-3 py-2 text-neutral-500">{contiPerId.get(m.conto_id)?.nome ?? "?"}</td>
+                  )}
+                  <td className="px-3 py-2">
+                    {m.stato === "pianificato" ? (
+                      <span className="rounded px-1.5 py-0.5 text-xs bg-amber-100 text-amber-800">pianificato</span>
+                    ) : (
+                      <span className="rounded px-1.5 py-0.5 text-xs bg-neutral-100 text-neutral-600">effettivo</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right font-medium text-green-700">
+                    {m.importo > 0 ? formattaEuro(m.importo) : ""}
+                  </td>
+                  <td className="px-3 py-2 text-right font-medium text-red-600">
+                    {m.importo < 0 ? formattaEuro(Math.abs(m.importo)) : ""}
+                  </td>
+                  {mostraSaldoProgressivo && (
+                    <td className="px-3 py-2 text-right font-semibold text-neutral-900">
+                      {saldoProgressivo != null ? formattaEuro(saldoProgressivo) : ""}
+                    </td>
+                  )}
+                  <td className="px-2 py-2 text-center">
+                    <button
+                      onClick={() => eliminaMovimento(m)}
+                      disabled={eliminandoId === m.id}
+                      className="text-xs text-neutral-400 hover:text-red-600 disabled:opacity-50"
+                      title="Elimina"
+                    >
+                      {eliminandoId === m.id ? "…" : "✕"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
