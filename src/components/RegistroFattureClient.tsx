@@ -128,6 +128,16 @@ function formattaDataPuntata(v: string): string {
   return `${giorno}.${mese}.${anno.slice(2)}`;
 }
 
+// "Pagato da terzi" (15/10, richiesto da Mauro — caso Melanie Pesavento,
+// fattura liquidata direttamente dall'assicurazione): segna la rata come
+// pagata (sparisce da "Scadenze da pagare") ma — a differenza di tutti gli
+// altri metodi — NON crea né aggiorna un movimento in Prima Nota, perché i
+// soldi non sono mai passati da un conto nostro. Per questo non chiede
+// nemmeno da quale conto è partito il pagamento (vedi serveContoEsplicito
+// più sotto), e se un movimento era già stato creato in precedenza con un
+// altro metodo viene eliminato al salvataggio.
+const METODO_NON_TOCCA_CONTI = "Pagato da terzi";
+
 // Metodi proposti nella tendina; "Altro" apre un campo libero, così Mauro
 // può sempre registrare un metodo nuovo senza dover aspettare che venga
 // aggiunto qui.
@@ -136,7 +146,7 @@ function formattaDataPuntata(v: string): string {
 // elencato in CONTO_PER_METODO qui sotto, il form chiede sempre da quale
 // conto è partito, esattamente come già succede per Bonifico/Altro, invece
 // di indovinarlo.
-const METODI_PAGAMENTO_PRESET = ["Carta di credito", "SumUp", "Bonifico", "RID", "Contanti"];
+const METODI_PAGAMENTO_PRESET = ["Carta di credito", "SumUp", "Bonifico", "RID", "Contanti", METODO_NON_TOCCA_CONTI];
 
 const ETICHETTE_MODALITA_PAGAMENTO: Record<string, string> = {
   MP01: "Contanti",
@@ -343,6 +353,8 @@ function confrontaRighe(
 // ogni pagamento fatture nella prima nota. Il conto si deduce da solo per
 // Carta di credito/SumUp/Contanti; per Bonifico o un metodo libero (due
 // conti bancari possibili) va sempre scelto esplicitamente — mai indovinato.
+// Eccezione: "Pagato da terzi" (15/10) non crea nessun movimento, perché il
+// pagamento non è mai passato da un conto nostro — vedi METODO_NON_TOCCA_CONTI.
 function FormPagamentoRata({
   rata,
   fornitoreNome,
@@ -373,7 +385,8 @@ function FormPagamentoRata({
 
   // Bonifico o un metodo libero ("Altro…"): due conti bancari possibili
   // (Volksbank, Trento), quindi va sempre scelto — mai indovinato.
-  const serveContoEsplicito = metodo === "" ? false : !(metodo in CONTO_PER_METODO);
+  const serveContoEsplicito =
+    metodo === "" || metodo === METODO_NON_TOCCA_CONTI ? false : !(metodo in CONTO_PER_METODO);
   const contoRisolto = serveContoEsplicito ? contoScelto : (CONTO_PER_METODO[metodo] && conti.find((c) => c.nome === CONTO_PER_METODO[metodo])?.id) || "";
 
   async function salva() {
@@ -408,12 +421,14 @@ function FormPagamentoRata({
     }
 
     // Sincronizza il movimento collegato in Prima Nota: se il pagamento è
-    // stato tolto (data vuota), elimina il movimento se esisteva; altrimenti
+    // stato tolto (data vuota) o il metodo è "Pagato da terzi" (i soldi non
+    // sono mai passati da un conto nostro), elimina il movimento se esisteva
+    // — es. perché prima era stato salvato con un altro metodo; altrimenti
     // crea/aggiorna l'unico movimento collegato a questa rata (l'onConflict
     // sul vincolo unico rata_pagamento_id evita di duplicarlo). Un eventuale
     // errore qui non fa perdere il salvataggio della rata, già andato a buon
     // fine sopra — resta solo segnalato, riprovabile risalvando.
-    if (!data) {
+    if (!data || metodoFinale === METODO_NON_TOCCA_CONTI) {
       await supabase.from("movimenti_prima_nota").delete().eq("rata_pagamento_id", rata.id);
     } else if (contoRisolto) {
       // Se la data è nel futuro (es. un RID già programmato) il movimento va
