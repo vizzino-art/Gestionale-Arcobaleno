@@ -16,6 +16,12 @@ type Props = {
   onChiudi: () => void;
 };
 
+// Etichette proposte per il pezzo quando "conta_a_pezzi" è attivo; "Altro…"
+// apre un campo libero, così non serve prevedere fin da subito ogni
+// etichetta possibile (richiesto da Mauro il 23/10, per evitare errori di
+// battitura rispetto a un campo di testo libero).
+const UM_PEZZO_PRESET = ["pz", "Bt", "Sc", "Ct", "Kg", "CF"];
+
 type Form = {
   descrizione: string;
   codice_articolo: string;
@@ -24,6 +30,8 @@ type Form = {
   um_confezione: string;
   pezzi_per_confezione: string;
   magazzino_in_confezione: boolean;
+  conta_a_pezzi: boolean;
+  um_pezzo: string;
   peso_kg_per_unita: string;
   tipo_conservazione: "" | TipoConservazione;
   prezzo_listino: string;
@@ -44,6 +52,8 @@ function formIniziale(p: ProdottoConCategoria | null): Form {
     um_confezione: p?.um_confezione ?? "",
     pezzi_per_confezione: p?.pezzi_per_confezione?.toString() ?? "",
     magazzino_in_confezione: p?.magazzino_in_confezione ?? false,
+    conta_a_pezzi: p?.conta_a_pezzi ?? false,
+    um_pezzo: p?.um_pezzo ?? "",
     peso_kg_per_unita: p?.peso_kg_per_unita?.toString() ?? "",
     tipo_conservazione: p?.tipo_conservazione ?? "",
     prezzo_listino: p?.prezzo_listino?.toString() ?? "",
@@ -103,6 +113,8 @@ export function ModificaProdottoModal({
       um_confezione: form.um_confezione.trim() === "" ? null : form.um_confezione.trim(),
       pezzi_per_confezione: numOrNull(form.pezzi_per_confezione),
       magazzino_in_confezione: form.magazzino_in_confezione,
+      conta_a_pezzi: form.conta_a_pezzi,
+      um_pezzo: form.conta_a_pezzi ? form.um_pezzo.trim() || null : null,
       peso_kg_per_unita: numOrNull(form.peso_kg_per_unita),
       tipo_conservazione: form.tipo_conservazione === "" ? null : form.tipo_conservazione,
       prezzo_listino: numOrNull(form.prezzo_listino),
@@ -251,7 +263,13 @@ export function ModificaProdottoModal({
             <input
               type="checkbox"
               checked={form.magazzino_in_confezione}
-              onChange={(e) => campo("magazzino_in_confezione", e.target.checked)}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  magazzino_in_confezione: e.target.checked,
+                  conta_a_pezzi: e.target.checked ? false : f.conta_a_pezzi,
+                }))
+              }
               className="mt-0.5 h-4 w-4"
             />
             <span>
@@ -263,6 +281,63 @@ export function ModificaProdottoModal({
               </span>
             </span>
           </label>
+
+          <label className="flex items-start gap-2 rounded-lg border border-neutral-200 p-3 text-sm text-neutral-700">
+            <input
+              type="checkbox"
+              checked={form.conta_a_pezzi}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  conta_a_pezzi: e.target.checked,
+                  magazzino_in_confezione: e.target.checked ? false : f.magazzino_in_confezione,
+                }))
+              }
+              className="mt-0.5 h-4 w-4"
+            />
+            <span>
+              Magazzino e Obiettivo si contano a pezzi, ma si ordina sempre &quot;UM&quot; intera
+              <br />
+              <span className="text-xs text-neutral-500">
+                Es. uova o olio: li compri solo a cartone chiuso dal fornitore (il prezzo resta a
+                cartone), ma sullo scaffale conti i pezzi rimasti. Usa &quot;Pezzi per confezione&quot;
+                sopra per dire quanti pezzi ci sono in un&apos;unità di acquisto.
+              </span>
+            </span>
+          </label>
+
+          {form.conta_a_pezzi &&
+            (() => {
+              const umPezzoScelta =
+                form.um_pezzo === "" || UM_PEZZO_PRESET.includes(form.um_pezzo) ? form.um_pezzo : "Altro";
+              return (
+                <label className="block text-xs text-neutral-500">
+                  Etichetta del pezzo (mostrata accanto a Magazzino in Ordina)
+                  <select
+                    value={umPezzoScelta}
+                    onChange={(e) => campo("um_pezzo", e.target.value === "Altro" ? "" : e.target.value)}
+                    className="mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-500"
+                  >
+                    <option value="">— scegli —</option>
+                    {UM_PEZZO_PRESET.map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
+                    <option value="Altro">Altro…</option>
+                  </select>
+                  {umPezzoScelta === "Altro" && (
+                    <input
+                      type="text"
+                      value={form.um_pezzo}
+                      onChange={(e) => campo("um_pezzo", e.target.value)}
+                      placeholder="Specifica etichetta"
+                      className="mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-500"
+                    />
+                  )}
+                </label>
+              );
+            })()}
 
           <div className="rounded-lg border border-neutral-200 p-3">
             <p className="mb-2 text-xs font-medium text-neutral-700">Prezzo e sconti</p>

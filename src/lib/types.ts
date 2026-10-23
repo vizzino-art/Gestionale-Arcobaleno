@@ -44,6 +44,14 @@ export type Prodotto = {
   // dove si conta il magazzino a confezioni intere ma il prezzo resta
   // tracciato nell'unità fine (es. €/kg) per poterlo trattare col fornitore.
   magazzino_in_confezione: boolean;
+  // Se true, "quantita_obiettivo" e "magazzino_attuale" sono espressi in
+  // pezzi "dentro" l'unità di acquisto (es. 12 pezzi in un cartone di
+  // polenta) — l'opposto di magazzino_in_confezione: qui si conta più fine
+  // del prezzo, non più grosso. L'ordine resta sempre nell'unità di
+  // acquisto intera (es. 1 CT), mai una frazione. um_pezzo è l'etichetta
+  // del pezzo (es. "pz", "Bt"): richiesto solo quando conta_a_pezzi è true.
+  conta_a_pezzi: boolean;
+  um_pezzo: string | null;
   omaggio_ogni: number | null;
   omaggio_gratis: number | null;
   // Come si conserva il prodotto (Fresco/Gelo/Ambiente): colora solo il

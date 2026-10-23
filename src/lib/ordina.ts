@@ -18,6 +18,9 @@ export type RigaOrdine = {
  * "um_confezione" (es. sacchi) — il prezzo resta comunque tracciato in "um".
  */
 export function unitaMagazzino(prodotto: Prodotto): string {
+  if (prodotto.conta_a_pezzi) {
+    return prodotto.um_pezzo || "pz";
+  }
   if (prodotto.magazzino_in_confezione) {
     return prodotto.um_confezione || prodotto.um || "";
   }
@@ -35,7 +38,7 @@ export function calcolaOrdine(prodotto: Prodotto): RigaOrdine | null {
 
   if (fabbisogno <= 0) return null;
 
-  const unitaMostrata = prodotto.um_confezione || prodotto.um || "";
+  let unitaMostrata = prodotto.um_confezione || prodotto.um || "";
 
   // Passo 1: se c'è una vera conversione in confezioni (es. PZ -> CT),
   // arrotonda sempre per eccesso (mai ordinare meno di quanto serve).
@@ -44,8 +47,20 @@ export function calcolaOrdine(prodotto: Prodotto): RigaOrdine | null {
   // Se magazzino_in_confezione è attivo, obiettivo/magazzino sono già
   // espressi in unità di confezione (es. sacchi): niente da convertire,
   // solo arrotondare per eccesso nel caso arrivino valori non interi.
+  // Se conta_a_pezzi è attivo (es. polenta/uova/olio: si conta il
+  // magazzino a pezzi ma si compra solo a cartone intero), è l'opposto:
+  // obiettivo/magazzino sono in pezzi, pezzi_per_confezione dice quanti
+  // pezzi ci sono in un'unità di acquisto, e si ordina sempre nell'unità
+  // di acquisto intera (es. CT) — mai una frazione di cartone, il prezzo
+  // resta quello del cartone.
   let necessario = fabbisogno;
-  if (prodotto.magazzino_in_confezione) {
+  if (prodotto.conta_a_pezzi) {
+    unitaMostrata = prodotto.um || "";
+    necessario =
+      prodotto.pezzi_per_confezione && prodotto.pezzi_per_confezione > 0
+        ? Math.ceil(fabbisogno / prodotto.pezzi_per_confezione)
+        : Math.ceil(fabbisogno);
+  } else if (prodotto.magazzino_in_confezione) {
     necessario = Math.ceil(fabbisogno);
   } else if (prodotto.pezzi_per_confezione && prodotto.pezzi_per_confezione > 0) {
     necessario = Math.ceil(fabbisogno / prodotto.pezzi_per_confezione);
