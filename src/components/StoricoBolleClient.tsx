@@ -84,15 +84,19 @@ export function StoricoBolleClient({ bolle, fattureAutomatiche, collegamentiManu
 
     setSalvataggioInCorso(true);
     setErroreSalvataggio(null);
-    // Corregge solo questa riga di storico prezzi — non tocca mai
-    // prodotti.prezzo_listino: una correzione qui serve a rimettere a posto
-    // un errore di lettura della bolla, non è detto sia il prezzo "vero" da
-    // tenere a listino (quello si aggiorna, se serve, da un'altra bolla o a
-    // mano in Pannello).
-    const { error } = await supabase
-      .from("storico_prezzi_fatture")
-      .update({ prezzo, quantita })
-      .eq("id", rigaId);
+    // Corregge prezzo e quantità di questa riga di storico prezzi e, in un
+    // colpo solo, aggiusta il Magazzino del prodotto per la differenza di
+    // quantità (richiesto da Mauro il 22/10, per restare allineati con
+    // l'aggiornamento automatico fatto al salvataggio della bolla) — non
+    // tocca mai prodotti.prezzo_listino: una correzione qui serve a
+    // rimettere a posto un errore di lettura della bolla, non è detto sia il
+    // prezzo "vero" da tenere a listino (quello si aggiorna, se serve, da
+    // un'altra bolla o a mano in Pannello).
+    const { error } = await supabase.rpc("correggi_riga_bolla", {
+      p_riga_id: rigaId,
+      p_nuovo_prezzo: prezzo,
+      p_nuova_quantita: quantita,
+    });
     setSalvataggioInCorso(false);
 
     if (error) {

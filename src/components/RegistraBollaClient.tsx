@@ -387,6 +387,13 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
       quantita: number | null;
     }[] = [];
     const aggiornamentiPrezzo: { id: string; prezzo: number }[] = [];
+    // Quanto si somma al Magazzino di ciascun prodotto per questa bolla
+    // (richiesto da Mauro il 22/10: prima bisognava aggiornarlo a mano dopo
+    // ogni consegna, e capitava di dimenticarselo — il prodotto restava
+    // "da ordinare" anche se era già arrivato). Un prodotto può comparire in
+    // più righe della stessa bolla, quindi si accumula per prodotto_id e si
+    // applica una volta sola più sotto.
+    const incrementiMagazzino = new Map<string, number>();
 
     // Contatore locale per l'"ordine" dei prodotti creati in questa stessa
     // bolla: prossimoOrdine() guarda i prodotti già esistenti, ma se in
@@ -490,6 +497,12 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
 
       righeRiuscite.add(r.chiave);
 
+      // Anche le righe in omaggio sono merce vera arrivata: contano per il
+      // Magazzino anche se non hanno un prezzo reale da registrare.
+      if (quantita != null) {
+        incrementiMagazzino.set(prodottoId, (incrementiMagazzino.get(prodottoId) ?? 0) + quantita);
+      }
+
       if (r.omaggio) {
         // Una riga in omaggio è merce vera arrivata con la bolla, ma non ha
         // un prezzo reale: non la registriamo nello storico_prezzi_fatture
@@ -514,6 +527,18 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
         setErrore(`Errore nel salvataggio dello storico: ${error.message}`);
         setSalvando(false);
         return;
+      }
+    }
+
+    for (const [prodottoId, delta] of incrementiMagazzino) {
+      const { error } = await supabase.rpc("incrementa_magazzino_bolla", {
+        p_prodotto_id: prodottoId,
+        p_delta: delta,
+      });
+      if (error) {
+        setErrore(
+          `Bolla salvata, ma l'aggiornamento automatico del Magazzino non è riuscito per un prodotto: ${error.message}. Aggiornalo a mano in Ordina.`
+        );
       }
     }
 
