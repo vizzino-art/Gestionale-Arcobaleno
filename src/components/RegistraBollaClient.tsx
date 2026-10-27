@@ -374,6 +374,10 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
     const daSaltarePrezzo: string[] = [];
     const daSaltareProdotto: string[] = [];
     const daVerificare: string[] = [];
+    // Prodotti "a confezioni" (peso variabile, es. salsiccia) per cui questa
+    // bolla non ha aggiornato il Magazzino in automatico — vedi più sotto
+    // dove si decide se sommare o no la quantità letta.
+    const daAggiornareAMano: string[] = [];
     const righeRiuscite = new Set<string>();
     // Righe in omaggio confermate: contate a parte solo per il messaggio
     // finale, non finiscono mai nello storico prezzi (vedi sotto).
@@ -498,9 +502,38 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
       righeRiuscite.add(r.chiave);
 
       // Anche le righe in omaggio sono merce vera arrivata: contano per il
-      // Magazzino anche se non hanno un prezzo reale da registrare.
+      // Magazzino anche se non hanno un prezzo reale da registrare. La
+      // quantità letta dalla bolla è sempre nell'unità di acquisto/prezzo
+      // (es. kg, cartoni) — se il prodotto tiene il Magazzino in un'altra
+      // unità va convertita, o non è possibile farlo in automatico
+      // (richiesto da Mauro il 25/10, dopo che una bolla di salsiccia aveva
+      // sommato i kg fatturati a un Magazzino che in realtà conta le
+      // confezioni, dando un numero senza senso).
       if (quantita != null) {
-        incrementiMagazzino.set(prodottoId, (incrementiMagazzino.get(prodottoId) ?? 0) + quantita);
+        const prodottoRiga = prodottoDa(prodottoId);
+        if (prodottoRiga?.magazzino_in_confezione) {
+          // Peso variabile a confezione (es. salsiccia): dai kg fatturati
+          // non si risale in automatico a quante confezioni sono arrivate —
+          // si lascia il Magazzino come prima, da aggiornare a mano, e lo si
+          // segnala dopo il salvataggio.
+          if (!daAggiornareAMano.includes(r.descrizione)) {
+            daAggiornareAMano.push(r.descrizione);
+          }
+        } else if (prodottoRiga?.conta_a_pezzi) {
+          // Es. polenta: la bolla riporta i cartoni, il Magazzino si tiene a
+          // pezzi — la conversione è sempre la stessa (pezzi per confezione)
+          // quindi qui si può fare in automatico.
+          const moltiplicatore =
+            prodottoRiga.pezzi_per_confezione && prodottoRiga.pezzi_per_confezione > 0
+              ? prodottoRiga.pezzi_per_confezione
+              : 1;
+          incrementiMagazzino.set(
+            prodottoId,
+            (incrementiMagazzino.get(prodottoId) ?? 0) + quantita * moltiplicatore
+          );
+        } else {
+          incrementiMagazzino.set(prodottoId, (incrementiMagazzino.get(prodottoId) ?? 0) + quantita);
+        }
       }
 
       if (r.omaggio) {
@@ -593,6 +626,11 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
     if (daVerificare.length > 0) {
       messaggi.push(
         `${daVerificare.length} riga/e in attesa di conferma sull'unità di misura (${daVerificare.join(", ")}): correggi la UM oppure spunta "Confermo" per salvarla comunque.`
+      );
+    }
+    if (daAggiornareAMano.length > 0) {
+      messaggi.push(
+        `${daAggiornareAMano.length} prodotto/i a peso variabile per confezione (${daAggiornareAMano.join(", ")}): il Magazzino non si aggiorna da solo per questi, aggiornalo a mano in Ordina.`
       );
     }
     if (messaggi.length > 0) {
