@@ -48,6 +48,7 @@ type RataEstratta = {
   importo: number;
   dataScadenza: string | null;
   modalitaPagamento: string | null;
+  iban: string | null;
 };
 
 type FatturaEstratta = {
@@ -92,6 +93,9 @@ type RataSalvata = {
   importo: number;
   data_scadenza: string | null;
   modalita_pagamento: string | null;
+  // IBAN su cui pagare, letto dalla fattura elettronica quando presente
+  // (27/10) — per averlo sottomano senza riaprire il file originale.
+  iban: string | null;
   // Passo B: quando/come Mauro ha pagato davvero questa rata — distinto
   // dalla scadenza e dalla modalità scritte in fattura, perché spesso paga
   // prima della scadenza e con un metodo diverso da quello dichiarato.
@@ -958,6 +962,7 @@ export function RegistroFattureClient({
               importo: r.importo,
               data_scadenza: r.dataScadenza,
               modalita_pagamento: r.modalitaPagamento,
+              iban: r.iban,
             }))
           )
           .select("*");
@@ -1034,6 +1039,7 @@ export function RegistroFattureClient({
                     {scaduta && " (scaduta)"}
                   </span>
                 </div>
+                {r.iban && <p className="mb-1 text-xs text-neutral-500">IBAN {r.iban}</p>}
                 <FormPagamentoRata
                   rata={r}
                   fornitoreNome={r.fornitoreNome}
@@ -1182,6 +1188,7 @@ export function RegistroFattureClient({
                     {formattaEuro(r.importo)} — scadenza {formattaData(r.dataScadenza)}
                     {r.modalitaPagamento &&
                       ` — ${ETICHETTE_MODALITA_PAGAMENTO[r.modalitaPagamento] ?? r.modalitaPagamento}`}
+                    {r.iban && <span className="text-neutral-500"> — IBAN {r.iban}</span>}
                   </li>
                 ))}
               </ul>
@@ -1313,6 +1320,7 @@ export function RegistroFattureClient({
                           {formattaEuro(r.importo)} — scadenza {formattaData(r.data_scadenza)}
                           {r.modalita_pagamento &&
                             ` — ${ETICHETTE_MODALITA_PAGAMENTO[r.modalita_pagamento] ?? r.modalita_pagamento}`}
+                          {r.iban && ` — IBAN ${r.iban}`}
                           {r.data_pagamento_effettivo && (
                             <span className="text-green-700">
                               {" "}

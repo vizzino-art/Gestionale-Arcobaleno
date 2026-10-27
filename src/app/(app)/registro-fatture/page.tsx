@@ -21,6 +21,7 @@ type FatturaPerRateNonPagate = {
     importo: number;
     data_scadenza: string | null;
     modalita_pagamento: string | null;
+    iban: string | null;
     data_pagamento_effettivo: string | null;
     metodo_pagamento_effettivo: string | null;
     movimenti_prima_nota: { conto_id: string }[];
@@ -80,7 +81,7 @@ export default async function RegistroFatturePage() {
     supabase
       .from("fatture_ricevute")
       .select(
-        "id, fornitore_nome, numero, rate_pagamento_fatture!inner(id, numero_rata, importo, data_scadenza, modalita_pagamento, data_pagamento_effettivo, metodo_pagamento_effettivo, movimenti_prima_nota(conto_id))"
+        "id, fornitore_nome, numero, rate_pagamento_fatture!inner(id, numero_rata, importo, data_scadenza, modalita_pagamento, iban, data_pagamento_effettivo, metodo_pagamento_effettivo, movimenti_prima_nota(conto_id))"
       )
       .is("rate_pagamento_fatture.data_pagamento_effettivo", null),
   ]);

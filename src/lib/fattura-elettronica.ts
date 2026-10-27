@@ -24,6 +24,11 @@ export type RataPagamentoFatturaElettronica = {
   importo: number;
   dataScadenza: string | null; // YYYY-MM-DD
   modalitaPagamento: string | null; // codice MP0x del tracciato FatturaPA
+  // IBAN su cui pagare, quando il fornitore lo scrive in fattura (richiesto
+  // da Mauro il 27/10, per non dover riaprire il file originale per fare il
+  // bonifico). Può in teoria variare da rata a rata, anche se di solito è lo
+  // stesso per tutte.
+  iban: string | null;
 };
 
 export type FatturaElettronicaParsata = {
@@ -183,6 +188,7 @@ export function parsaFatturaElettronica(
     importo: numeroONull(p?.ImportoPagamento) ?? 0,
     dataScadenza: testoONull(p?.DataScadenzaPagamento),
     modalitaPagamento: testoONull(p?.ModalitaPagamento),
+    iban: testoONull(p?.IBAN),
   }));
 
   return {
