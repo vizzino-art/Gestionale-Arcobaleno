@@ -210,8 +210,16 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
 
   // Controllo bolla già registrata: quando numero DDT/fornitore combaciano
   // con qualcosa già salvato, avvisiamo prima che Mauro la registri due
-  // volte per sbaglio (es. se si dimentica di averla già fatta).
-  const [duplicato, setDuplicato] = useState<{ righe: number } | null>(null);
+  // volte per sbaglio (es. se si dimentica di averla già fatta). Teniamo
+  // anche i prodotti già salvati sotto quel numero DDT (non solo il
+  // conteggio): richiesto da Mauro il 29/10, perché con alcuni fornitori
+  // (es. Rossi) una bolla può arrivare su più fogli con lo stesso numero
+  // DDT ma prodotti diversi (il resto degli articoli che non ci stavano sul
+  // primo foglio) — in quel caso non è un doppione vero, e non ha senso
+  // fermarlo con l'avviso rosso ogni volta.
+  const [duplicato, setDuplicato] = useState<{ righe: number; prodottiId: Set<string> } | null>(
+    null
+  );
   const [duplicatoConfermato, setDuplicatoConfermato] = useState(false);
 
   const prodottiFornitore = useMemo(
@@ -252,13 +260,17 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
         if (!annullato) setDuplicato(null);
         return;
       }
-      const { count } = await supabase
+      const { data } = await supabase
         .from("storico_prezzi_fatture")
-        .select("id", { count: "exact", head: true })
+        .select("prodotto_id")
         .eq("fornitore_id", fornitoreId)
         .eq("numero_fattura", `DDT ${numeroDdt.trim()}`);
       if (!annullato) {
-        setDuplicato(count && count > 0 ? { righe: count } : null);
+        setDuplicato(
+          data && data.length > 0
+            ? { righe: data.length, prodottiId: new Set(data.map((d) => d.prodotto_id as string)) }
+            : null
+        );
       }
     }, 400);
     return () => {
@@ -266,6 +278,19 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
       clearTimeout(timer);
     };
   }, [estrazioneFatta, fornitoreId, numeroDdt, supabase]);
+
+  // Vero doppione solo se almeno uno dei prodotti di QUESTA foto è già tra
+  // quelli salvati sotto lo stesso numero DDT — una riga con un prodotto
+  // nuovo (NUOVO_PRODOTTO, non ha ancora un id) non può mai dare un falso
+  // positivo qui. Se il numero DDT combacia ma i prodotti sono tutti
+  // diversi, è quasi certamente un secondo foglio della stessa bolla, non
+  // un doppione vero.
+  const duplicatoSovrapposto = useMemo(() => {
+    if (!duplicato) return false;
+    return righe.some(
+      (r) => r.prodottoId && r.prodottoId !== NUOVO_PRODOTTO && duplicato.prodottiId.has(r.prodottoId)
+    );
+  }, [duplicato, righe]);
 
   async function scattaOCarica(file: File) {
     setErrore(null);
@@ -358,7 +383,7 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
 
   async function salvaTutto() {
     if (!fornitoreId) return;
-    if (duplicato && !duplicatoConfermato) {
+    if (duplicato && duplicatoSovrapposto && !duplicatoConfermato) {
       setErrore("Questa bolla risulta già registrata: spunta la conferma sopra prima di salvare, se sei sicuro che non sia un doppione.");
       return;
     }
@@ -738,12 +763,12 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
             </label>
           </div>
 
-          {duplicato && (
+          {duplicato && duplicatoSovrapposto && (
             <div className="mb-3 rounded-md bg-red-50 p-3 text-xs text-red-800">
               <p>
-                ⚠️ Risulta già registrata una bolla con questo numero DDT per questo fornitore
-                ({duplicato.righe} {duplicato.righe === 1 ? "riga" : "righe"} già salvate). Controlla
-                in &quot;Storico bolle&quot; se l&apos;hai già inserita prima di continuare, per non
+                ⚠️ Risulta già registrata una bolla con questo numero DDT per questo fornitore, e
+                almeno un prodotto di questa foto è già tra quelli salvati. Controlla in
+                &quot;Storico bolle&quot; se l&apos;hai già inserita prima di continuare, per non
                 registrarla due volte.
               </p>
               <label className="mt-2 flex items-center gap-1.5">
@@ -754,6 +779,16 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
                 />
                 Ho controllato, non è un doppione: registrala comunque
               </label>
+            </div>
+          )}
+
+          {duplicato && !duplicatoSovrapposto && (
+            <div className="mb-3 rounded-md bg-blue-50 p-3 text-xs text-blue-800">
+              ℹ️ Esiste già una bolla con questo numero DDT per questo fornitore ({duplicato.righe}{" "}
+              {duplicato.righe === 1 ? "riga" : "righe"} già salvate), ma nessun prodotto di questa
+              foto è tra quelli già registrati: probabilmente è un secondo foglio della stessa bolla
+              (es. il resto degli articoli che non ci stavano sul primo) — puoi procedere senza
+              problemi.
             </div>
           )}
 
