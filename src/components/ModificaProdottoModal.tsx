@@ -24,6 +24,7 @@ const UM_PEZZO_PRESET = ["pz", "Bt", "Sc", "Ct", "Kg", "CF"];
 
 type Form = {
   descrizione: string;
+  note: string;
   codice_articolo: string;
   categoria_id: string; // "" = nessuna
   um: string;
@@ -46,6 +47,7 @@ type Form = {
 function formIniziale(p: ProdottoConCategoria | null): Form {
   return {
     descrizione: p?.descrizione ?? "",
+    note: p?.note ?? "",
     codice_articolo: p?.codice_articolo ?? "",
     categoria_id: p?.categoria_id ?? "",
     um: p?.um ?? "",
@@ -109,6 +111,7 @@ export function ModificaProdottoModal({
       categoria_id: form.categoria_id === "" ? null : form.categoria_id,
       codice_articolo: form.codice_articolo.trim() === "" ? null : form.codice_articolo.trim(),
       descrizione: form.descrizione.trim(),
+      note: form.note.trim() === "" ? null : form.note.trim(),
       um: form.um.trim() === "" ? null : form.um.trim(),
       um_confezione: form.um_confezione.trim() === "" ? null : form.um_confezione.trim(),
       pezzi_per_confezione: numOrNull(form.pezzi_per_confezione),
@@ -168,6 +171,17 @@ export function ModificaProdottoModal({
               value={form.descrizione}
               onChange={(e) => campo("descrizione", e.target.value)}
               className="mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-500"
+            />
+          </label>
+
+          <label className="block text-xs text-neutral-500">
+            Note (es. quando ordinarlo, eccezioni — visibili anche in Ordina)
+            <textarea
+              value={form.note}
+              onChange={(e) => campo("note", e.target.value)}
+              rows={2}
+              placeholder="Es. non ordinare in estate, chiedere prima disponibilità…"
+              className="mt-1 block w-full resize-none rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-500"
             />
           </label>
 

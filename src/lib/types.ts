@@ -28,6 +28,11 @@ export type Prodotto = {
   categoria_id: string | null;
   codice_articolo: string | null;
   descrizione: string;
+  // Nota libera sul prodotto (es. eccezioni su quando ordinarlo: "non
+  // ordinare in estate", "chiedere prima disponibilità al fornitore") —
+  // visibile sia in Pannello (dove si modifica) sia in Ordina, sulla card
+  // del prodotto. null = nessuna nota.
+  note: string | null;
   prezzo_listino: number | null;
   sconto1: number | null;
   sconto2: number | null;

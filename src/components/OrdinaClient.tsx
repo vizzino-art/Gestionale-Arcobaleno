@@ -55,6 +55,9 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
   const [ricerca, setRicerca] = useState("");
   const [modaleModifica, setModaleModifica] = useState<ProdottoConCategoria | null>(null);
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // Riferimenti ai campi Magazzino, per poter spostare il focus sul
+  // prodotto successivo con il bottone/tasto "prossimo" (vedi sotto).
+  const magazzinoRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const coloriCategorie = useMemo(() => mappaColoriCategorie(categorie), [categorie]);
 
@@ -115,7 +118,14 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
   }, [fornitore, righeOrdine]);
 
   function aggiornaCampo(prodottoId: string, campo: "quantita_obiettivo" | "magazzino_attuale", valore: string) {
-    const numero = valore === "" ? null : Number(valore);
+    // Il campo Magazzino ora è type="text" (serviva per poter selezionare
+    // tutto il numero al focus, vedi sotto — su mobile .select() non
+    // funziona sugli input type="number"), quindi qui va accettata anche
+    // la virgola come separatore decimale (tastiera numerica italiana).
+    const pulito = valore.trim().replace(",", ".");
+    const numero = pulito === "" ? null : Number(pulito);
+    if (numero !== null && Number.isNaN(numero)) return; // testo non numerico: ignora, non salva
+
     setProdotti((prev) =>
       prev.map((p) => (p.id === prodottoId ? { ...p, [campo]: numero } : p))
     );
@@ -208,6 +218,18 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
     setTimeout(() => setCopiato(false), 1500);
   }
 
+  // Sposta il focus (e quindi la selezione automatica, vedi onFocus sotto)
+  // sul campo Magazzino del prodotto successivo nell'elenco visualizzato —
+  // per poter scorrere e compilare i magazzini uno dopo l'altro senza
+  // dover toccare ogni volta la casella giusta (richiesto da Mauro il 30/10).
+  function focusProssimoMagazzino(prodottoId: string) {
+    const idx = prodottiVisualizzati.findIndex((p) => p.id === prodottoId);
+    if (idx === -1) return;
+    const prossimo = prodottiVisualizzati[idx + 1];
+    if (!prossimo) return; // era l'ultimo del fornitore, nessuna azione
+    magazzinoRefs.current[prossimo.id]?.focus();
+  }
+
   return (
     <div>
       <div className="mb-4 flex gap-1 overflow-x-auto border-b border-neutral-200 pb-2">
@@ -270,13 +292,16 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
           return (
             <div
               key={p.id}
-              className="flex items-stretch overflow-hidden rounded-xl border border-neutral-200"
+              className="flex flex-col overflow-hidden rounded-xl border border-neutral-200 sm:flex-row sm:items-stretch"
             >
               {/* Blocco Magazzino: frecce di ordinamento + campo magazzino,
                   un blocco a sé, colorato per Fresco/Gelo/Ambiente — di
                   proposito staccato dal blocco prodotto (colorato per
                   categoria) invece di un'etichetta colorata dentro la riga,
-                  per non mischiare i due colori. */}
+                  per non mischiare i due colori. Sotto i ~640px (sm) i due
+                  blocchi si impilano uno sopra l'altro invece di stare
+                  affiancati, per non forzare lo scroll laterale sul
+                  cellulare (segnalato da Mauro il 30/10). */}
               <div
                 className={`flex shrink-0 items-center gap-1.5 p-2 ${classeRiquadroMagazzino(p.tipo_conservazione)}`}
               >
@@ -301,13 +326,42 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
 
                 <label className="text-center text-[10px] leading-tight text-neutral-600">
                   Magazzino{unita && ` (${unita})`}
-                  <input
-                    type="number"
-                    step="any"
-                    defaultValue={p.magazzino_attuale ?? ""}
-                    onChange={(e) => aggiornaCampo(p.id, "magazzino_attuale", e.target.value)}
-                    className="mt-1 block w-14 rounded-md border border-white/70 bg-white/80 px-1 py-2 text-center text-sm text-neutral-900 outline-none focus:border-neutral-500"
-                  />
+                  <div className="mt-1 flex items-center gap-1">
+                    <input
+                      ref={(el) => {
+                        magazzinoRefs.current[p.id] = el;
+                      }}
+                      type="text"
+                      inputMode="decimal"
+                      enterKeyHint="next"
+                      defaultValue={p.magazzino_attuale ?? ""}
+                      // Al tap/click seleziona subito tutto il numero esistente,
+                      // così si scrive direttamente il nuovo senza doverlo
+                      // cancellare a mano (richiesto da Mauro il 30/10).
+                      onFocus={(e) => e.target.select()}
+                      // Il tasto "Avanti"/invio della tastiera numerica (dove
+                      // disponibile) passa al campo Magazzino successivo,
+                      // come il bottone ⏭ qui a fianco.
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          focusProssimoMagazzino(p.id);
+                        }
+                      }}
+                      onChange={(e) => aggiornaCampo(p.id, "magazzino_attuale", e.target.value)}
+                      className="block w-14 rounded-md border border-white/70 bg-white/80 px-1 py-2 text-center text-sm text-neutral-900 outline-none focus:border-neutral-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => focusProssimoMagazzino(p.id)}
+                      disabled={i === prodottiVisualizzati.length - 1}
+                      title="Vai al campo Magazzino del prossimo prodotto"
+                      aria-label="Vai al prossimo campo Magazzino"
+                      className="rounded-md bg-white/70 px-1.5 py-2 text-xs text-neutral-600 hover:bg-white disabled:opacity-20"
+                    >
+                      ⏭
+                    </button>
+                  </div>
                 </label>
               </div>
 
@@ -338,6 +392,10 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
                       </button>
                     </div>
                   </div>
+
+                  {p.note && (
+                    <p className="mt-1 text-xs italic text-neutral-600">📝 {p.note}</p>
+                  )}
 
                   {riga && (
                     <p className="mt-1 text-sm font-medium text-neutral-900">
