@@ -537,12 +537,30 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
       if (quantita != null) {
         const prodottoRiga = prodottoDa(prodottoId);
         if (prodottoRiga?.magazzino_in_confezione) {
-          // Peso variabile a confezione (es. salsiccia): dai kg fatturati
-          // non si risale in automatico a quante confezioni sono arrivate —
-          // si lascia il Magazzino come prima, da aggiornare a mano, e lo si
-          // segnala dopo il salvataggio.
-          if (!daAggiornareAMano.includes(r.descrizione)) {
-            daAggiornareAMano.push(r.descrizione);
+          if (prodottoRiga.peso_confezione_fisso && prodottoRiga.peso_confezione_fisso > 0) {
+            // Peso FISSO per confezione (es. farina a sacchi da 10 kg,
+            // campo dedicato "peso_confezione_fisso" compilato con quel
+            // peso): la conversione kg fatturati -> numero di confezioni è
+            // sempre la stessa, quindi qui si può fare in automatico
+            // (richiesto da Mauro il 30/10, dopo il caso della farina
+            // Rossi). Campo apposta SEPARATO da "pezzi_per_confezione", che
+            // su molti prodotti magazzino_in_confezione ha già un altro
+            // significato (pezzi per cartone, es. lattine) — scoperto da
+            // Claude Code prima di pushare, non si doveva riusare lo stesso
+            // campo per due cose diverse.
+            incrementiMagazzino.set(
+              prodottoId,
+              (incrementiMagazzino.get(prodottoId) ?? 0) + quantita / prodottoRiga.peso_confezione_fisso
+            );
+          } else {
+            // Peso VARIABILE a confezione (es. salsiccia, "Pezzi per
+            // confezione" lasciato vuoto apposta): dai kg fatturati non si
+            // risale in automatico a quante confezioni sono arrivate — si
+            // lascia il Magazzino come prima, da aggiornare a mano, e lo si
+            // segnala dopo il salvataggio.
+            if (!daAggiornareAMano.includes(r.descrizione)) {
+              daAggiornareAMano.push(r.descrizione);
+            }
           }
         } else if (prodottoRiga?.conta_a_pezzi) {
           // Es. polenta: la bolla riporta i cartoni, il Magazzino si tiene a

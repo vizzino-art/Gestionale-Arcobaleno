@@ -49,6 +49,14 @@ export type Prodotto = {
   // dove si conta il magazzino a confezioni intere ma il prezzo resta
   // tracciato nell'unità fine (es. €/kg) per poterlo trattare col fornitore.
   magazzino_in_confezione: boolean;
+  // Solo quando magazzino_in_confezione è true: peso fisso di UNA confezione
+  // nell'unità "um" (es. 10 = un sacco da 10 kg). Se è compilato, "Registra
+  // bolla" converte da sola i kg fatturati in numero di confezioni. Se è
+  // vuoto, il peso della confezione varia ogni volta (es. salsiccia) e il
+  // Magazzino resta sempre manuale. Campo indipendente da
+  // "pezzi_per_confezione", che ha un altro significato (pezzi per cartone)
+  // già usato da altri prodotti con magazzino_in_confezione attivo.
+  peso_confezione_fisso: number | null;
   // Se true, "quantita_obiettivo" e "magazzino_attuale" sono espressi in
   // pezzi "dentro" l'unità di acquisto (es. 12 pezzi in un cartone di
   // polenta) — l'opposto di magazzino_in_confezione: qui si conta più fine

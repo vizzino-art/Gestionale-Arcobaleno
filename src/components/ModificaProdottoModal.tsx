@@ -31,6 +31,7 @@ type Form = {
   um_confezione: string;
   pezzi_per_confezione: string;
   magazzino_in_confezione: boolean;
+  peso_confezione_fisso: string;
   conta_a_pezzi: boolean;
   um_pezzo: string;
   peso_kg_per_unita: string;
@@ -54,6 +55,7 @@ function formIniziale(p: ProdottoConCategoria | null): Form {
     um_confezione: p?.um_confezione ?? "",
     pezzi_per_confezione: p?.pezzi_per_confezione?.toString() ?? "",
     magazzino_in_confezione: p?.magazzino_in_confezione ?? false,
+    peso_confezione_fisso: p?.peso_confezione_fisso?.toString() ?? "",
     conta_a_pezzi: p?.conta_a_pezzi ?? false,
     um_pezzo: p?.um_pezzo ?? "",
     peso_kg_per_unita: p?.peso_kg_per_unita?.toString() ?? "",
@@ -116,6 +118,7 @@ export function ModificaProdottoModal({
       um_confezione: form.um_confezione.trim() === "" ? null : form.um_confezione.trim(),
       pezzi_per_confezione: numOrNull(form.pezzi_per_confezione),
       magazzino_in_confezione: form.magazzino_in_confezione,
+      peso_confezione_fisso: form.magazzino_in_confezione ? numOrNull(form.peso_confezione_fisso) : null,
       conta_a_pezzi: form.conta_a_pezzi,
       um_pezzo: form.conta_a_pezzi ? form.um_pezzo.trim() || null : null,
       peso_kg_per_unita: numOrNull(form.peso_kg_per_unita),
@@ -291,10 +294,30 @@ export function ModificaProdottoModal({
               <br />
               <span className="text-xs text-neutral-500">
                 Es. tieni il conto a sacchi interi ma il prezzo resta tracciato al kg (per trattare col
-                fornitore). Attivalo solo se hai compilato UM confezione e Pezzi per confezione sopra.
+                fornitore). Attivalo solo se hai compilato UM confezione sopra.
+                <br />
+                Se il peso della confezione è sempre lo stesso (es. sacco da 10 kg), compila anche il
+                campo &quot;Peso fisso per confezione&quot; qui sotto: registrando una bolla, il
+                Magazzino si aggiornerà da solo convertendo i kg in confezioni. Se invece il peso cambia
+                ogni volta (es. salsiccia, salumi), lascialo vuoto: dovrai correggere il Magazzino a
+                mano dopo ogni consegna, come oggi.
               </span>
             </span>
           </label>
+
+          {form.magazzino_in_confezione && (
+            <label className="block text-xs text-neutral-500">
+              Peso fisso per confezione (in {form.um || "UM"}, es. 10 per un sacco da 10 kg)
+              <input
+                type="number"
+                step="any"
+                value={form.peso_confezione_fisso}
+                onChange={(e) => campo("peso_confezione_fisso", e.target.value)}
+                placeholder="Lascia vuoto se il peso cambia ogni volta"
+                className="mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-500"
+              />
+            </label>
+          )}
 
           <label className="flex items-start gap-2 rounded-lg border border-neutral-200 p-3 text-sm text-neutral-700">
             <input
