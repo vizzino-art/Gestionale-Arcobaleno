@@ -57,6 +57,19 @@ export type Prodotto = {
   // "pezzi_per_confezione", che ha un altro significato (pezzi per cartone)
   // già usato da altri prodotti con magazzino_in_confezione attivo.
   peso_confezione_fisso: number | null;
+  // Pagina "Giro" (30/10): se true, il prodotto compare nell'elenco unico
+  // (tutti i fornitori insieme, nell'ordine del giro fisico che Mauro fa nel
+  // locale) oltre che nella tab del suo fornitore in Ordina. Si toglie dal
+  // giro col bottone ✕ lì, o da questa stessa casella in Pannello — non
+  // influisce in alcun modo su Ordina/Riepilogo, che restano come sempre.
+  in_giro: boolean;
+  // Posizione nell'elenco della pagina "Giro" — campo apposta SEPARATO da
+  // "ordine" qui sotto (quello resta solo per le frecce dentro Ordina,
+  // dentro la tab di un singolo fornitore: valori identici su fornitori
+  // diversi non si disturbano a vicenda lì, ma renderebbero il Giro
+  // incoerente se condividessero lo stesso campo). Un prodotto nuovo senza
+  // "ordine_giro" lo riceve da solo in fondo al giro via trigger database.
+  ordine_giro: number | null;
   // Se true, "quantita_obiettivo" e "magazzino_attuale" sono espressi in
   // pezzi "dentro" l'unità di acquisto (es. 12 pezzi in un cartone di
   // polenta) — l'opposto di magazzino_in_confezione: qui si conta più fine

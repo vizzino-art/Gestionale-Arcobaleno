@@ -10,6 +10,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export type PaginaId =
   | "fornitori"
   | "ordina"
+  | "giro"
   | "pannello"
   | "riepilogo"
   | "confronta"
@@ -24,6 +25,7 @@ export type PaginaId =
 export const PAGINE: { id: PaginaId; href: string; label: string }[] = [
   { id: "fornitori", href: "/fornitori", label: "Fornitori" },
   { id: "ordina", href: "/ordina", label: "Ordina" },
+  { id: "giro", href: "/giro", label: "Giro" },
   { id: "pannello", href: "/pannello", label: "Pannello" },
   { id: "riepilogo", href: "/riepilogo", label: "Riepilogo" },
   { id: "confronta", href: "/confronta", label: "Confronta" },

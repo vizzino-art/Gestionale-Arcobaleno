@@ -43,6 +43,7 @@ type Form = {
   omaggio_ogni: string;
   omaggio_gratis: string;
   attivo: boolean;
+  in_giro: boolean;
 };
 
 function formIniziale(p: ProdottoConCategoria | null): Form {
@@ -67,6 +68,9 @@ function formIniziale(p: ProdottoConCategoria | null): Form {
     omaggio_ogni: p?.omaggio_ogni?.toString() ?? "",
     omaggio_gratis: p?.omaggio_gratis?.toString() ?? "",
     attivo: p?.attivo ?? true,
+    // Prodotto nuovo: dentro al giro di default, come tutti gli altri
+    // (coerente con il default della colonna sul database).
+    in_giro: p?.in_giro ?? true,
   };
 }
 
@@ -130,6 +134,7 @@ export function ModificaProdottoModal({
       omaggio_ogni: numOrNull(form.omaggio_ogni),
       omaggio_gratis: numOrNull(form.omaggio_gratis),
       attivo: form.attivo,
+      in_giro: form.in_giro,
     };
 
     const query = prodotto
@@ -456,6 +461,16 @@ export function ModificaProdottoModal({
               className="h-4 w-4"
             />
             Prodotto attivo (visibile in Ordina/Riepilogo)
+          </label>
+
+          <label className="flex items-center gap-2 text-sm text-neutral-700">
+            <input
+              type="checkbox"
+              checked={form.in_giro}
+              onChange={(e) => campo("in_giro", e.target.checked)}
+              className="h-4 w-4"
+            />
+            Fa parte del Giro (elenco unico di tutti i fornitori, da aggiornare mentre fai il giro del locale)
           </label>
 
           {errore && <p className="text-sm text-red-600">{errore}</p>}
