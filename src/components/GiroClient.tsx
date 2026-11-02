@@ -163,6 +163,52 @@ export function GiroClient({ fornitori, prodottiIniziali, confronto, storico, ca
     ]);
   }
 
+  // Salto diretto a una posizione (30/10, richiesto da Mauro dopo aver
+  // provato le sole frecce su centinaia di prodotti: spostare un prodotto
+  // di molte posizioni a tap singoli è troppo lento). Ricalcola l'intero
+  // elenco con il prodotto spostato, poi rinumera in sequenza 1..N —
+  // aggiorna su Supabase solo le righe il cui ordine_giro è davvero
+  // cambiato (di norma solo quelle comprese tra la vecchia e la nuova
+  // posizione: le altre restano identiche e non generano query).
+  function vaiAllaPosizione(prodottoId: string) {
+    const idx = prodottiGiro.findIndex((p) => p.id === prodottoId);
+    if (idx === -1) return;
+    const p = prodottiGiro[idx];
+    const totale = prodottiGiro.length;
+
+    const valore = window.prompt(
+      `Sposta "${p.descrizione}" in che posizione nel Giro? (1-${totale})`,
+      String(idx + 1)
+    );
+    if (valore === null) return;
+    const richiesta = Math.round(Number(valore.trim()));
+    if (!Number.isFinite(richiesta) || richiesta < 1) return;
+    const nuovoIdx = Math.min(richiesta, totale) - 1;
+    if (nuovoIdx === idx) return;
+
+    const riordinati = [...prodottiGiro];
+    const [spostato] = riordinati.splice(idx, 1);
+    riordinati.splice(nuovoIdx, 0, spostato);
+
+    const aggiornamenti: { id: string; ordine_giro: number }[] = [];
+    riordinati.forEach((prod, i) => {
+      const nuovoValore = i + 1;
+      if (prod.ordine_giro !== nuovoValore) aggiornamenti.push({ id: prod.id, ordine_giro: nuovoValore });
+    });
+    if (aggiornamenti.length === 0) return;
+
+    const nuoviValori = new Map(aggiornamenti.map((a) => [a.id, a.ordine_giro]));
+    setProdotti((prev) =>
+      prev.map((prod) =>
+        nuoviValori.has(prod.id) ? { ...prod, ordine_giro: nuoviValori.get(prod.id)! } : prod
+      )
+    );
+
+    void Promise.all(
+      aggiornamenti.map((a) => supabase.from("prodotti").update({ ordine_giro: a.ordine_giro }).eq("id", a.id))
+    );
+  }
+
   // "Togli dal giro": non disattiva né elimina il prodotto, solo smette di
   // mostrarlo qui — resta ordinabile come sempre da Ordina/Riepilogo.
   // Si rimette dentro dalla stessa casella in Pannello (ModificaProdottoModal).
@@ -261,6 +307,14 @@ export function GiroClient({ fornitori, prodottiIniziali, confronto, storico, ca
                     className="rounded px-1.5 py-1 text-neutral-500 hover:bg-white/70 hover:text-neutral-800 disabled:opacity-20"
                   >
                     ▼
+                  </button>
+                  <button
+                    onClick={() => vaiAllaPosizione(p.id)}
+                    disabled={ricercaAttiva}
+                    title="Vai a una posizione precisa nel Giro"
+                    className="rounded px-1 py-0.5 text-[9px] font-medium text-neutral-500 hover:bg-white/70 hover:text-neutral-800 disabled:opacity-20"
+                  >
+                    #{i + 1}
                   </button>
                 </div>
 
