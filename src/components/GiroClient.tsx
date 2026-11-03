@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { calcolaOrdine, unitaMagazzino } from "@/lib/ordina";
@@ -434,6 +435,22 @@ export function GiroClient({ fornitori, prodottiIniziali, confronto, storico, ca
           );
         })}
       </div>
+
+      {/* Scorciatoia in fondo (3/11, richiesta da Mauro: i prodotti di
+          fornitori "extra" come il Tosano finiscono in coda al giro, ed
+          è comodo poter passare al Riepilogo da lì senza risalire o usare
+          il menu). Porta solo alla pagina — non invia nulla da qui: i
+          messaggi WhatsApp restano un'azione del Riepilogo stesso. */}
+      {prodottiGiro.length > 0 && (
+        <div className="mt-4 flex justify-center">
+          <Link
+            href="/riepilogo"
+            className="rounded-md bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-neutral-700"
+          >
+            ✓ Fine giro — vai al Riepilogo
+          </Link>
+        </div>
+      )}
 
       {modaleModifica && (
         <ModificaProdottoModal
