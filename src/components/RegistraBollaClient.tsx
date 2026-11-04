@@ -999,7 +999,16 @@ export function RegistraBollaClient({ fornitori, prodotti, categorie }: Props) {
           {righe.length > 0 && (
             <button
               onClick={salvaTutto}
-              disabled={salvando || (duplicato !== null && !duplicatoConfermato)}
+              // (4/11) Corretto: si blocca solo se c'è una VERA sovrapposizione
+              // di prodotti con lo stesso numero DDT (duplicatoSovrapposto),
+              // non per qualsiasi bolla già esistente con quel numero — prima
+              // restava bloccato per sempre anche nel caso "nessun prodotto
+              // uguale, probabilmente è un secondo foglio" (il messaggio
+              // azzurro sopra, quello che dice "puoi procedere senza
+              // problemi"), perché in quel caso non compare nessuna casella
+              // per mettere duplicatoConfermato a true. Stessa condizione già
+              // usata correttamente in salvaTutto() più sopra.
+              disabled={salvando || (duplicato !== null && duplicatoSovrapposto && !duplicatoConfermato)}
               className="mt-4 w-full rounded-lg bg-green-600 px-4 py-3 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
             >
               {salvando ? "Salvo…" : `Salva ${righe.filter((r) => r.prodottoId).length} di ${righe.length} righe`}
