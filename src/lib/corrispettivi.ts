@@ -31,15 +31,21 @@ import { CAMPI_CORRISPETTIVI } from "@/lib/corrispettivi-campi";
 //    colonne — l'API Google restituisce il testo solo nella prima delle
 //    due, la seconda arriverebbe vuota.
 // 3. (4/10) Da ottobre è comparsa nel foglio una colonna indipendente con
-//    intestazione "SUMUP" (tutta maiuscola, tra "Satispay" e "F24", vuota/
-//    non usata da nessuna automazione) OLTRE alla vera colonna "SumUp" (il
-//    lordo degli incassi, tra "F24" e "SumUp - Comm", quella con l'importo
-//    reale). norm() abbassa entrambe le intestazioni alla stessa stringa
-//    "sumup", quindi una ricerca per testo con findIndex (primo risultato)
-//    trovava sempre la colonna sbagliata (vuota, quindi 0,00 in pagina)
-//    invece di quella vera. "SumUp (lordo)" va quindi individuata per
-//    posizione come i casi sopra: è sempre la colonna subito prima di
-//    "SumUp - Comm", che invece si trova per testo senza ambiguità.
+//    intestazione "SUMUP" (tutta maiuscola, vuota/non usata da nessuna
+//    automazione) OLTRE alla vera colonna "SumUp" (il lordo degli incassi,
+//    quella con l'importo reale). norm() abbassa entrambe le intestazioni
+//    alla stessa stringa "sumup", quindi una ricerca per testo con
+//    findIndex (primo risultato) trovava sempre la colonna sbagliata (vuota,
+//    quindi 0,00 in pagina) invece di quella vera. "SumUp (lordo)" va quindi
+//    individuata per posizione come i casi sopra: è sempre la colonna
+//    subito prima di "SumUp - Comm", che invece si trova per testo senza
+//    ambiguità.
+// 4. (4/11) Mauro ha tolto dal foglio la colonna "F24" e al suo posto ne ha
+//    aggiunta una nuova per i buoni pasto Welfare Pellegrini, cercata per
+//    testo come tutte le altre a posizione libera (intestazione "pell",
+//    vedi INTESTAZIONI_TESTO sotto) — non essendo un punto di riferimento
+//    per nessun calcolo posizionale (a differenza di "SumUp - Comm" sopra),
+//    questa sostituzione non tocca nient'altro in questo file.
 export const MESI_SCHEDE = [
   "Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
   "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre",
@@ -118,7 +124,7 @@ const INTESTAZIONI_TESTO: Record<string, string> = {
   bonifico: "bonifico",
   satispay: "satispay",
   eden: "eden",
-  f24: "f24",
+  pellegrini: "pell",
   sumup_comm: "sumup - comm",
   acq_card_sumup: "acq. card sumump",
   mastercard: "mastercard+maestro",

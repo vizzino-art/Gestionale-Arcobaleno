@@ -19,12 +19,14 @@
 // valore in CorrispettiviClient.tsx (vedi src/components/icone-pagamento.tsx).
 // "logo" indica un'immagine (PNG ritagliata dagli screenshot dei loghi
 // ufficiali che Mauro ha caricato in chat il 21/9, salvata in
-// public/loghi-pagamento/) mostrata con un tag <img>. Per "f24" il logo non
-// è quello ufficiale dell'Agenzia delle Entrate (che incorpora lo stemma
-// della Repubblica Italiana, vincoli d'uso diversi da un marchio aziendale,
-// evitato di proposito) ma un'iconcina neutra mandata da Mauro apposta al
-// suo posto. "badge" è rimasto solo per i pochissimi campi senza logo/icona
-// disponibile.
+// public/loghi-pagamento/) mostrata con un tag <img>. "badge" è rimasto solo
+// per i pochissimi campi senza logo/icona disponibile.
+//
+// (4/11) Campo "f24" rimosso: Mauro ha tolto quella colonna dal foglio
+// Google. Al suo posto, nuovo campo "pellegrini" (buoni pasto Welfare
+// Pellegrini, intestazione cercata nel foglio: "pell", vedi
+// INTESTAZIONI_TESTO in src/lib/corrispettivi.ts) — stesso logo scontornato
+// dal marchio "Welfare Pellegrini" mandato da Mauro in chat.
 export type CampoCorrispettivo = {
   id: string;
   etichetta: string;
@@ -58,10 +60,10 @@ export const CAMPI_CORRISPETTIVI: CampoCorrispettivo[] = [
     logo: "/loghi-pagamento/edenred.png",
   },
   {
-    id: "f24",
-    etichetta: "F24",
+    id: "pellegrini",
+    etichetta: "Pellegrini",
     tipo: "importo",
-    logo: "/loghi-pagamento/agenzia-entrate.png",
+    logo: "/loghi-pagamento/pellegrini.png",
   },
   {
     id: "sumup_lordo",
