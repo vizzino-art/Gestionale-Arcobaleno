@@ -7,6 +7,7 @@ import {
   formattaDataBreve,
   formattaMessaggioWhatsApp,
   linkWhatsApp,
+  obiettivoEffettivo,
   prossimaConsegna,
   unitaMagazzino,
 } from "@/lib/ordina";
@@ -117,7 +118,11 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
     return formattaMessaggioWhatsApp(fornitore.nome, fornitore.giorno_consegna, righeOrdine);
   }, [fornitore, righeOrdine]);
 
-  function aggiornaCampo(prodottoId: string, campo: "quantita_obiettivo" | "magazzino_attuale", valore: string) {
+  function aggiornaCampo(
+    prodottoId: string,
+    campo: "quantita_obiettivo" | "magazzino_attuale" | "quantita_fissa_ordine" | "obiettivo_martedi" | "obiettivo_sabato",
+    valore: string
+  ) {
     // Il campo Magazzino ora è type="text" (serviva per poter selezionare
     // tutto il numero al focus, vedi sotto — su mobile .select() non
     // funziona sugli input type="number"), quindi qui va accettata anche
@@ -148,20 +153,50 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
   // aggiorna spesso): per evitare modifiche accidentali toccandolo per
   // sbaglio, prima chiede conferma e solo poi apre il popup per il nuovo
   // valore, invece di essere un campo sempre pronto a scrivere come Magazzino.
+  //
+  // (4/11) Due varianti aggiunte, scelte in base al prodotto:
+  // - "quantita_fissa_ordine" compilato (es. mozzarella di Caseificio
+  //   Basso, ordine fisso ogni giovedì): si modifica quello, il Magazzino
+  //   non c'entra per niente.
+  // - altrimenti, se oggi è martedì/sabato e il prodotto ha un obiettivo
+  //   specifico per quel giorno (es. mozzarella di Caseificio Gioachin,
+  //   consegna sia martedì che sabato con bisogni diversi): si modifica
+  //   quel campo invece del normale "quantita_obiettivo" — stessa funzione
+  //   obiettivoEffettivo() usata dal calcolo dell'ordine, per restare
+  //   sempre allineati con quello che mostra "Ordina: X".
   function modificaObiettivo(p: ProdottoConCategoria) {
     const unita = unitaMagazzino(p);
+
+    if (p.quantita_fissa_ordine != null) {
+      const valore = window.prompt(
+        `Quantità fissa da ordinare per "${p.descrizione}"${unita ? ` (${unita})` : ""} — sempre questa, qualunque sia il Magazzino:`,
+        String(p.quantita_fissa_ordine)
+      );
+      if (valore === null) return;
+      aggiornaCampo(p.id, "quantita_fissa_ordine", valore.trim());
+      return;
+    }
+
+    const effettivo = obiettivoEffettivo(p);
+    const etichettaGiorno =
+      effettivo.campo === "obiettivo_martedi"
+        ? " di martedì"
+        : effettivo.campo === "obiettivo_sabato"
+          ? " di sabato"
+          : "";
+
     const vuoleModificare = window.confirm(
-      `Obiettivo attuale di "${p.descrizione}": ${p.quantita_obiettivo ?? "—"} ${unita}.\n\nVuoi modificarlo?`
+      `Obiettivo${etichettaGiorno} attuale di "${p.descrizione}": ${effettivo.valore ?? "—"} ${unita}.\n\nVuoi modificarlo?`
     );
     if (!vuoleModificare) return;
 
     const valore = window.prompt(
-      `Nuovo obiettivo per "${p.descrizione}"${unita ? ` (${unita})` : ""}:`,
-      p.quantita_obiettivo != null ? String(p.quantita_obiettivo) : ""
+      `Nuovo obiettivo${etichettaGiorno} per "${p.descrizione}"${unita ? ` (${unita})` : ""}:`,
+      effettivo.valore != null ? String(effettivo.valore) : ""
     );
     if (valore === null) return; // annullato
 
-    aggiornaCampo(p.id, "quantita_obiettivo", valore.trim());
+    aggiornaCampo(p.id, effettivo.campo, valore.trim());
   }
 
   async function spostaProdotto(prodottoId: string, direzione: "su" | "giu") {
@@ -288,6 +323,9 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
           const coloreCategoria = p.categoria_id ? coloriCategorie.get(p.categoria_id) : undefined;
           const colore = coloreCategoria ?? COLORI_RIGA[i % COLORI_RIGA.length];
           const unita = unitaMagazzino(p);
+          const effettivo = obiettivoEffettivo(p);
+          const etichettaGiornoBox =
+            effettivo.campo === "obiettivo_martedi" ? " (mar)" : effettivo.campo === "obiettivo_sabato" ? " (sab)" : "";
 
           return (
             <div
@@ -403,6 +441,7 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
                       {riga.quantitaOmaggio > 0 && (
                         <span className="text-green-700"> (+{arrotonda(riga.quantitaOmaggio)} omaggio)</span>
                       )}
+                      {riga.fisso && <span className="text-neutral-400"> (fisso)</span>}
                     </p>
                   )}
 
@@ -424,16 +463,26 @@ export function OrdinaClient({ fornitori, prodottiIniziali, confronto, storico, 
                 </div>
 
                 {/* Obiettivo: cambia quasi mai, quindi è solo testo — tap apre
-                    conferma + popup di modifica invece di un campo sempre editabile. */}
+                    conferma + popup di modifica invece di un campo sempre editabile.
+                    (4/11) Se il prodotto ha "quantita_fissa_ordine" compilato, la
+                    casella mostra quello al posto dell'Obiettivo (non ha senso un
+                    obiettivo se l'ordine è sempre lo stesso); altrimenti mostra
+                    l'obiettivo di OGGI (normale, o quello di martedì/sabato se
+                    questo prodotto ne ha uno specifico per oggi — vedi
+                    obiettivoEffettivo in src/lib/ordina.ts). */}
                 <button
                   onClick={() => modificaObiettivo(p)}
-                  title="Tocca per modificare l'obiettivo"
+                  title={
+                    p.quantita_fissa_ordine != null
+                      ? "Tocca per modificare la quantità fissa da ordinare"
+                      : "Tocca per modificare l'obiettivo"
+                  }
                   className="shrink-0 rounded-md px-2 py-1.5 text-right text-[10px] leading-tight text-neutral-500 hover:bg-white/70"
                 >
-                  Obiettivo
+                  {p.quantita_fissa_ordine != null ? "Ordine fisso" : `Obiettivo${etichettaGiornoBox}`}
                   <br />
                   <span className="text-sm font-medium text-neutral-800">
-                    {p.quantita_obiettivo ?? "—"}
+                    {p.quantita_fissa_ordine != null ? p.quantita_fissa_ordine : (effettivo.valore ?? "—")}
                   </span>
                   {unita && <span> {unita}</span>}
                 </button>

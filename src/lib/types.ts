@@ -44,6 +44,23 @@ export type Prodotto = {
   peso_kg_per_unita: number | null;
   quantita_obiettivo: number | null;
   magazzino_attuale: number | null;
+  // Ordine fisso (4/11, richiesto da Mauro per la mozzarella di Caseificio
+  // Basso: il giovedì ordina sempre questa quantità, qualunque sia il
+  // Magazzino — es. un fornitore che consegna sempre lo stesso tanto a
+  // prescindere da quanto resta). Se compilato, Ordina/Giro ignorano del
+  // tutto "quantita_obiettivo"/"magazzino_attuale" per questo prodotto e
+  // mostrano sempre questa quantità — niente calcolo, niente bisogno di
+  // tenere il Magazzino aggiornato per lui. null = calcolo normale.
+  quantita_fissa_ordine: number | null;
+  // Obiettivo diverso per martedì/sabato (4/11, richiesto da Mauro per la
+  // mozzarella di Caseificio Gioachin: consegna sia martedì che sabato, con
+  // bisogni diversi — 25 kg prima del martedì, 75 kg prima del sabato). Se
+  // compilato per il giorno corrente, sostituisce "quantita_obiettivo" solo
+  // quel giorno (vedi obiettivoEffettivo() in src/lib/ordina.ts); il
+  // Magazzino resta sempre uno solo, condiviso fra i due giorni. null =
+  // nessun obiettivo speciale per quel giorno, resta quello normale.
+  obiettivo_martedi: number | null;
+  obiettivo_sabato: number | null;
   // Se true, "quantita_obiettivo" e "magazzino_attuale" sono espressi in
   // um_confezione (es. sacchi) invece che in um (es. kg) — per prodotti
   // dove si conta il magazzino a confezioni intere ma il prezzo resta

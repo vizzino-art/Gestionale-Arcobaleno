@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { calcolaOrdine, unitaMagazzino } from "@/lib/ordina";
+import { calcolaOrdine, obiettivoEffettivo, unitaMagazzino } from "@/lib/ordina";
 import { mappaColoriCategorie } from "@/lib/colori-categorie";
 import { classeRiquadroMagazzino } from "@/lib/tipo-conservazione";
 import { ModificaProdottoModal } from "./ModificaProdottoModal";
@@ -98,7 +98,11 @@ export function GiroClient({ fornitori, prodottiIniziali, confronto, storico, ca
     );
   }, [prodottiGiro, ricerca, fornitoreNomeDi]);
 
-  function aggiornaCampo(prodottoId: string, campo: "quantita_obiettivo" | "magazzino_attuale", valore: string) {
+  function aggiornaCampo(
+    prodottoId: string,
+    campo: "quantita_obiettivo" | "magazzino_attuale" | "quantita_fissa_ordine" | "obiettivo_martedi" | "obiettivo_sabato",
+    valore: string
+  ) {
     const pulito = valore.trim().replace(",", ".");
     const numero = pulito === "" ? null : Number(pulito);
     if (numero !== null && Number.isNaN(numero)) return;
@@ -121,20 +125,43 @@ export function GiroClient({ fornitori, prodottiIniziali, confronto, storico, ca
     }, 700);
   }
 
+  // (4/11) Stessa logica di OrdinaClient.tsx — vedi i commenti lì: ordine
+  // fisso (es. mozzarella Basso) modifica "quantita_fissa_ordine" invece
+  // dell'obiettivo; martedì/sabato con un obiettivo specifico (es.
+  // mozzarella Gioachin) modifica quel campo invece del normale.
   function modificaObiettivo(p: ProdottoConCategoria) {
     const unita = unitaMagazzino(p);
+
+    if (p.quantita_fissa_ordine != null) {
+      const valore = window.prompt(
+        `Quantità fissa da ordinare per "${p.descrizione}"${unita ? ` (${unita})` : ""} — sempre questa, qualunque sia il Magazzino:`,
+        String(p.quantita_fissa_ordine)
+      );
+      if (valore === null) return;
+      aggiornaCampo(p.id, "quantita_fissa_ordine", valore.trim());
+      return;
+    }
+
+    const effettivo = obiettivoEffettivo(p);
+    const etichettaGiorno =
+      effettivo.campo === "obiettivo_martedi"
+        ? " di martedì"
+        : effettivo.campo === "obiettivo_sabato"
+          ? " di sabato"
+          : "";
+
     const vuoleModificare = window.confirm(
-      `Obiettivo attuale di "${p.descrizione}": ${p.quantita_obiettivo ?? "—"} ${unita}.\n\nVuoi modificarlo?`
+      `Obiettivo${etichettaGiorno} attuale di "${p.descrizione}": ${effettivo.valore ?? "—"} ${unita}.\n\nVuoi modificarlo?`
     );
     if (!vuoleModificare) return;
 
     const valore = window.prompt(
-      `Nuovo obiettivo per "${p.descrizione}"${unita ? ` (${unita})` : ""}:`,
-      p.quantita_obiettivo != null ? String(p.quantita_obiettivo) : ""
+      `Nuovo obiettivo${etichettaGiorno} per "${p.descrizione}"${unita ? ` (${unita})` : ""}:`,
+      effettivo.valore != null ? String(effettivo.valore) : ""
     );
     if (valore === null) return;
 
-    aggiornaCampo(p.id, "quantita_obiettivo", valore.trim());
+    aggiornaCampo(p.id, effettivo.campo, valore.trim());
   }
 
   // Frecce ▲▼: scambiano "ordine_giro" tra prodotti adiacenti nell'elenco
@@ -283,6 +310,9 @@ export function GiroClient({ fornitori, prodottiIniziali, confronto, storico, ca
           const coloreCategoria = p.categoria_id ? coloriCategorie.get(p.categoria_id) : undefined;
           const colore = coloreCategoria ?? COLORI_RIGA[i % COLORI_RIGA.length];
           const unita = unitaMagazzino(p);
+          const effettivo = obiettivoEffettivo(p);
+          const etichettaGiornoBox =
+            effettivo.campo === "obiettivo_martedi" ? " (mar)" : effettivo.campo === "obiettivo_sabato" ? " (sab)" : "";
 
           return (
             <div
@@ -396,6 +426,7 @@ export function GiroClient({ fornitori, prodottiIniziali, confronto, storico, ca
                       {riga.quantitaOmaggio > 0 && (
                         <span className="text-green-700"> (+{arrotonda(riga.quantitaOmaggio)} omaggio)</span>
                       )}
+                      {riga.fisso && <span className="text-neutral-400"> (fisso)</span>}
                     </p>
                   ) : (
                     <p className="mt-1 text-sm text-neutral-400">Magazzino sufficiente</p>
@@ -420,13 +451,17 @@ export function GiroClient({ fornitori, prodottiIniziali, confronto, storico, ca
 
                 <button
                   onClick={() => modificaObiettivo(p)}
-                  title="Tocca per modificare l'obiettivo"
+                  title={
+                    p.quantita_fissa_ordine != null
+                      ? "Tocca per modificare la quantità fissa da ordinare"
+                      : "Tocca per modificare l'obiettivo"
+                  }
                   className="shrink-0 rounded-md px-2 py-1.5 text-right text-[10px] leading-tight text-neutral-500 hover:bg-white/70"
                 >
-                  Obiettivo
+                  {p.quantita_fissa_ordine != null ? "Ordine fisso" : `Obiettivo${etichettaGiornoBox}`}
                   <br />
                   <span className="text-sm font-medium text-neutral-800">
-                    {p.quantita_obiettivo ?? "—"}
+                    {p.quantita_fissa_ordine != null ? p.quantita_fissa_ordine : (effettivo.valore ?? "—")}
                   </span>
                   {unita && <span> {unita}</span>}
                 </button>

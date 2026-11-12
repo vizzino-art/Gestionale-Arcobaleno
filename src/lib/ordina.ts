@@ -10,7 +10,37 @@ export type RigaOrdine = {
   quantitaOrdine: number; // quantità da ordinare (pagata), nell'unità mostrata
   quantitaOmaggio: number; // quantità in più ricevuta gratis, stessa unità
   unitaMostrata: string; // um_confezione se presente, altrimenti um
+  // true se questa riga viene da "quantita_fissa_ordine" (ordine fisso,
+  // vedi sotto) invece che dal calcolo Obiettivo - Magazzino.
+  fisso: boolean;
 };
+
+export type ObiettivoEffettivo = {
+  valore: number | null;
+  campo: "quantita_obiettivo" | "obiettivo_martedi" | "obiettivo_sabato";
+};
+
+/**
+ * Obiettivo da usare OGGI per questo prodotto (4/11, richiesto da Mauro per
+ * la mozzarella di Caseificio Gioachin: consegna sia martedì che sabato,
+ * con bisogni diversi — 25 kg per il martedì, 75 kg per il sabato). Se oggi
+ * è uno di quei due giorni e il prodotto ha un obiettivo specifico
+ * compilato per quel giorno, lo usa al posto del campo normale
+ * "quantita_obiettivo" — altrimenti (qualunque altro giorno, o se il campo
+ * del giorno non è compilato) usa sempre "quantita_obiettivo" come prima.
+ * Il "campo" restituito dice anche quale campo modificare se Mauro tocca
+ * "Obiettivo" in Ordina/Giro quel giorno (vedi modificaObiettivo() lì).
+ */
+export function obiettivoEffettivo(prodotto: Prodotto, oggi: Date = new Date()): ObiettivoEffettivo {
+  const giorno = oggi.getDay(); // 0=domenica, 2=martedì, 6=sabato
+  if (giorno === 2 && prodotto.obiettivo_martedi != null) {
+    return { valore: prodotto.obiettivo_martedi, campo: "obiettivo_martedi" };
+  }
+  if (giorno === 6 && prodotto.obiettivo_sabato != null) {
+    return { valore: prodotto.obiettivo_sabato, campo: "obiettivo_sabato" };
+  }
+  return { valore: prodotto.quantita_obiettivo, campo: "quantita_obiettivo" };
+}
 
 /**
  * Unità in cui sono espressi obiettivo/magazzino per questo prodotto:
@@ -32,9 +62,17 @@ export function unitaMagazzino(prodotto: Prodotto): string {
  * Ritorna null se non c'è fabbisogno (magazzino già sufficiente) o dati insufficienti.
  */
 export function calcolaOrdine(prodotto: Prodotto): RigaOrdine | null {
-  const obiettivo = prodotto.quantita_obiettivo ?? 0;
-  const magazzino = prodotto.magazzino_attuale ?? 0;
-  const fabbisogno = Math.max(obiettivo - magazzino, 0);
+  // Ordine fisso (4/11): salta del tutto il calcolo Obiettivo - Magazzino,
+  // vedi commento su "quantita_fissa_ordine" in src/lib/types.ts.
+  const fisso = prodotto.quantita_fissa_ordine != null;
+  let fabbisogno: number;
+  if (fisso) {
+    fabbisogno = Math.max(prodotto.quantita_fissa_ordine ?? 0, 0);
+  } else {
+    const obiettivo = obiettivoEffettivo(prodotto).valore ?? 0;
+    const magazzino = prodotto.magazzino_attuale ?? 0;
+    fabbisogno = Math.max(obiettivo - magazzino, 0);
+  }
 
   if (fabbisogno <= 0) return null;
 
@@ -78,10 +116,10 @@ export function calcolaOrdine(prodotto: Prodotto): RigaOrdine | null {
     const resto = necessario - blocchiCompleti * blocco;
     const quantitaOrdine = blocchiCompleti * ogni + resto;
     const quantitaOmaggio = blocchiCompleti * gratis;
-    return { prodotto, fabbisogno, quantitaOrdine, quantitaOmaggio, unitaMostrata };
+    return { prodotto, fabbisogno, quantitaOrdine, quantitaOmaggio, unitaMostrata, fisso };
   }
 
-  return { prodotto, fabbisogno, quantitaOrdine: necessario, quantitaOmaggio: 0, unitaMostrata };
+  return { prodotto, fabbisogno, quantitaOrdine: necessario, quantitaOmaggio: 0, unitaMostrata, fisso };
 }
 
 const GIORNI_NOME = ["domenica", "lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato"];

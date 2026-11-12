@@ -44,6 +44,9 @@ type Form = {
   omaggio_gratis: string;
   attivo: boolean;
   in_giro: boolean;
+  quantita_fissa_ordine: string;
+  obiettivo_martedi: string;
+  obiettivo_sabato: string;
 };
 
 function formIniziale(p: ProdottoConCategoria | null): Form {
@@ -71,6 +74,9 @@ function formIniziale(p: ProdottoConCategoria | null): Form {
     // Prodotto nuovo: dentro al giro di default, come tutti gli altri
     // (coerente con il default della colonna sul database).
     in_giro: p?.in_giro ?? true,
+    quantita_fissa_ordine: p?.quantita_fissa_ordine?.toString() ?? "",
+    obiettivo_martedi: p?.obiettivo_martedi?.toString() ?? "",
+    obiettivo_sabato: p?.obiettivo_sabato?.toString() ?? "",
   };
 }
 
@@ -135,6 +141,9 @@ export function ModificaProdottoModal({
       omaggio_gratis: numOrNull(form.omaggio_gratis),
       attivo: form.attivo,
       in_giro: form.in_giro,
+      quantita_fissa_ordine: numOrNull(form.quantita_fissa_ordine),
+      obiettivo_martedi: numOrNull(form.obiettivo_martedi),
+      obiettivo_sabato: numOrNull(form.obiettivo_sabato),
     };
 
     const query = prodotto
@@ -451,6 +460,60 @@ export function ModificaProdottoModal({
                 className="mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-500"
               />
             </label>
+          </div>
+
+          <div className="rounded-lg border border-neutral-200 p-3">
+            <p className="mb-2 text-xs font-medium text-neutral-700">
+              Ordine fisso (facoltativo — 4/11, es. un fornitore che consegna sempre la stessa quantità)
+            </p>
+            <label className="block text-xs text-neutral-500">
+              Quantità fissa da ordinare (ignora Magazzino e Obiettivo)
+              <input
+                type="number"
+                step="any"
+                value={form.quantita_fissa_ordine}
+                onChange={(e) => campo("quantita_fissa_ordine", e.target.value)}
+                placeholder="Lascia vuoto per il calcolo normale Obiettivo - Magazzino"
+                className="mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-500"
+              />
+            </label>
+            <p className="mt-1 text-xs text-neutral-500">
+              Se compilato, in Ordina/Giro comparirà sempre &quot;Ordina: questa quantità&quot;, qualunque
+              sia il Magazzino — niente più da tenere aggiornato per questo prodotto.
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-neutral-200 p-3">
+            <p className="mb-2 text-xs font-medium text-neutral-700">
+              Obiettivo diverso per martedì/sabato (facoltativo — 4/11, es. un fornitore che consegna più
+              giorni a settimana con bisogni diversi)
+            </p>
+            <div className="flex gap-3">
+              <label className="flex-1 text-xs text-neutral-500">
+                Obiettivo di martedì
+                <input
+                  type="number"
+                  step="any"
+                  value={form.obiettivo_martedi}
+                  onChange={(e) => campo("obiettivo_martedi", e.target.value)}
+                  className="mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-500"
+                />
+              </label>
+              <label className="flex-1 text-xs text-neutral-500">
+                Obiettivo di sabato
+                <input
+                  type="number"
+                  step="any"
+                  value={form.obiettivo_sabato}
+                  onChange={(e) => campo("obiettivo_sabato", e.target.value)}
+                  className="mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-500"
+                />
+              </label>
+            </div>
+            <p className="mt-1 text-xs text-neutral-500">
+              Se compilati, il martedì/sabato Ordina e Giro useranno questo obiettivo al posto di quello
+              normale qui sopra — il Magazzino resta sempre uno solo, condiviso fra i due giorni.
+            </p>
           </div>
 
           <label className="flex items-center gap-2 text-sm text-neutral-700">
