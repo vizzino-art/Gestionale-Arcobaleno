@@ -21,24 +21,43 @@ export type ObiettivoEffettivo = {
 };
 
 /**
- * Obiettivo da usare OGGI per questo prodotto (4/11, richiesto da Mauro per
- * la mozzarella di Caseificio Gioachin: consegna sia martedì che sabato,
- * con bisogni diversi — 25 kg per il martedì, 75 kg per il sabato). Se oggi
- * è uno di quei due giorni e il prodotto ha un obiettivo specifico
- * compilato per quel giorno, lo usa al posto del campo normale
- * "quantita_obiettivo" — altrimenti (qualunque altro giorno, o se il campo
- * del giorno non è compilato) usa sempre "quantita_obiettivo" come prima.
- * Il "campo" restituito dice anche quale campo modificare se Mauro tocca
- * "Obiettivo" in Ordina/Giro quel giorno (vedi modificaObiettivo() lì).
+ * Obiettivo da usare per questo prodotto (4/11, richiesto da Mauro per la
+ * mozzarella di Caseificio Gioachin: consegna sia martedì che sabato, con
+ * bisogni diversi — 25 kg per il martedì, 75 kg per il sabato).
+ *
+ * (15/11, corretto dopo segnalazione di Mauro: la prima versione usava il
+ * campo del giorno speciale SOLO se oggi era esattamente quel giorno —
+ * controllando Ordina/Giro una domenica, ad es., non c'era alcun obiettivo
+ * di riferimento, quindi niente da ordinare, anche se la consegna di
+ * martedì andava comunque preparata. Ora si usa sempre il campo del
+ * prossimo giorno speciale più vicino, contando anche oggi stesso — così
+ * si può controllare/preparare l'ordine in un giorno qualsiasi della
+ * settimana, non solo il giorno esatto della consegna.)
+ *
+ * Se nessuno dei due campi è compilato (prodotto senza obiettivi per
+ * giorno specifico), usa sempre "quantita_obiettivo" come prima. Il
+ * "campo" restituito dice anche quale campo modificare se Mauro tocca
+ * "Obiettivo" in Ordina/Giro (vedi modificaObiettivo() lì).
  */
 export function obiettivoEffettivo(prodotto: Prodotto, oggi: Date = new Date()): ObiettivoEffettivo {
-  const giorno = oggi.getDay(); // 0=domenica, 2=martedì, 6=sabato
-  if (giorno === 2 && prodotto.obiettivo_martedi != null) {
-    return { valore: prodotto.obiettivo_martedi, campo: "obiettivo_martedi" };
+  const giorno = oggi.getDay(); // 0=domenica ... 2=martedì ... 6=sabato
+  const giorniAlMartedi = (2 - giorno + 7) % 7;
+  const giorniAlSabato = (6 - giorno + 7) % 7;
+
+  // Il giorno speciale più vicino vince (a parità — impossibile qui,
+  // martedì e sabato non cadono mai nello stesso giorno — vincerebbe
+  // comunque martedì); se il suo campo non è compilato, prova l'altro
+  // prima di arrendersi all'obiettivo normale.
+  const ordineTentativi: Array<"obiettivo_martedi" | "obiettivo_sabato"> =
+    giorniAlMartedi <= giorniAlSabato
+      ? ["obiettivo_martedi", "obiettivo_sabato"]
+      : ["obiettivo_sabato", "obiettivo_martedi"];
+
+  for (const campo of ordineTentativi) {
+    const valore = prodotto[campo];
+    if (valore != null) return { valore, campo };
   }
-  if (giorno === 6 && prodotto.obiettivo_sabato != null) {
-    return { valore: prodotto.obiettivo_sabato, campo: "obiettivo_sabato" };
-  }
+
   return { valore: prodotto.quantita_obiettivo, campo: "quantita_obiettivo" };
 }
 
