@@ -20,7 +20,8 @@ export type PaginaId =
   | "prima-nota"
   | "corrispettivi"
   | "buoni-pasto"
-  | "ditte";
+  | "ditte"
+  | "frutta-verdura";
 
 export const PAGINE: { id: PaginaId; href: string; label: string }[] = [
   { id: "fornitori", href: "/fornitori", label: "Fornitori" },
@@ -36,6 +37,7 @@ export const PAGINE: { id: PaginaId; href: string; label: string }[] = [
   { id: "corrispettivi", href: "/corrispettivi", label: "Corrispettivi" },
   { id: "buoni-pasto", href: "/buoni-pasto", label: "Buoni Pasto" },
   { id: "ditte", href: "/ditte", label: "Ditte" },
+  { id: "frutta-verdura", href: "/frutta-verdura", label: "Frutta e Verdura" },
 ];
 
 export type Permessi = {

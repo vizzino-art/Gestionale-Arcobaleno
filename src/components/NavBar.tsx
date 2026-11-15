@@ -15,7 +15,7 @@ type Voce = { href: string; label: string };
 // c'entrano tutte su una riga la pillola va a capo intera, mai spezzata.
 const GRUPPI: string[][] = [
   ["/fornitori", "/ditte"],
-  ["/ordina", "/giro", "/riepilogo"],
+  ["/ordina", "/giro", "/riepilogo", "/frutta-verdura"],
   ["/pannello", "/confronta"],
   ["/registra-bolla", "/storico-bolle", "/registro-fatture"],
   ["/prima-nota", "/corrispettivi", "/buoni-pasto"],
