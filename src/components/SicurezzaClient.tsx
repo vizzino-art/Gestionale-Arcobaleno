@@ -110,6 +110,40 @@ function BarraBustePaga({ ultima }: { ultima: UltimaBusta | null }) {
   );
 }
 
+// Passo 6: il riepilogo parte da solo ogni lunedì; questo pulsante manda
+// subito una copia di prova (segnata [PROVA], non conta per le novità 🆕).
+function ProvaEmail() {
+  const [stato, setStato] = useState<"" | "invio" | "ok" | "errore">("");
+  const [messaggio, setMessaggio] = useState("");
+  async function invia() {
+    setStato("invio");
+    try {
+      const r = await fetch("/api/sicurezza/promemoria", { method: "POST" });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d?.errore ?? `Errore ${r.status}`);
+      setStato("ok");
+      setMessaggio(d.inviata ? `Email di prova inviata (${d.scaduti} scaduti, ${d.inScadenza} in scadenza).` : d.motivo);
+    } catch (e) {
+      setStato("errore");
+      setMessaggio(e instanceof Error ? e.message : "Errore");
+    }
+  }
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <button
+        onClick={invia}
+        disabled={stato === "invio"}
+        className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-60"
+      >
+        {stato === "invio" ? "Invio…" : "✉️ Invia riepilogo di prova"}
+      </button>
+      {messaggio && (
+        <span className={`text-xs ${stato === "errore" ? "text-red-700" : "text-green-700"}`}>{messaggio}</span>
+      )}
+    </span>
+  );
+}
+
 const CLASSI: Record<ReturnType<typeof colore>, string> = {
   rosso: "bg-red-50 text-red-700 ring-red-200",
   giallo: "bg-amber-50 text-amber-800 ring-amber-200",
@@ -209,6 +243,7 @@ export function SicurezzaClient({ persone, corsi, formazioni, visite, oggi, ulti
         >
           🎓 Registra corso di gruppo
         </button>
+        <ProvaEmail />
       </div>
 
       {modale && <FinestraModifica modale={modale} corsi={corsi} onChiudi={() => setModale(null)} />}

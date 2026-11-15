@@ -9,7 +9,7 @@ import { leggiPermessi, paginaDaPercorso, PAGINE } from "@/lib/permessi";
 // Idem /api/sicurezza/sincronizza-buste (cron notturno delle buste paga,
 // modulo Sicurezza 15/11/2026): GET con CRON_SECRET, POST solo admin —
 // entrambi verificati dentro la route stessa.
-const PUBLIC_PATHS = ["/login", "/api/backup-drive", "/api/sicurezza/sincronizza-buste"];
+const PUBLIC_PATHS = ["/login", "/api/backup-drive", "/api/sicurezza/sincronizza-buste", "/api/sicurezza/promemoria"];
 
 // Raggiungibile da qualsiasi utente loggato qualunque sia il suo permesso,
 // anche uno limitato a cui non è stata ancora concessa nessuna pagina —
