@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { SicurezzaClient } from "@/components/SicurezzaClient";
+import { SicurezzaClient, type UltimaBusta } from "@/components/SicurezzaClient";
 import { leggiPermessi } from "@/lib/permessi";
 import { oggiRoma, type Corso, type Formazione, type Persona, type Visita } from "@/lib/sicurezza";
 
@@ -23,11 +23,19 @@ export default async function SicurezzaPage() {
     );
   }
 
-  const [persone, corsi, formazioni, visite] = await Promise.all([
+  const [persone, corsi, formazioni, visite, ultimaBusta] = await Promise.all([
     supabase.from("sic_persone").select("*"),
     supabase.from("sic_corsi").select("*"),
     supabase.from("sic_formazioni").select("*"),
     supabase.from("sic_visite").select("*"),
+    // Non bloccante: se la tabella non c'è ancora la pagina funziona lo stesso.
+    supabase
+      .from("sic_buste_lette")
+      .select("anno, mese, letta_il, avvisi")
+      .order("anno", { ascending: false })
+      .order("mese", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
   const errore = persone.error ?? corsi.error ?? formazioni.error ?? visite.error;
 
@@ -52,6 +60,7 @@ export default async function SicurezzaPage() {
           formazioni={(formazioni.data ?? []) as Formazione[]}
           visite={(visite.data ?? []) as Visita[]}
           oggi={oggiRoma()}
+          ultimaBusta={ultimaBusta.error ? null : (ultimaBusta.data as UltimaBusta | null)}
         />
       )}
     </div>

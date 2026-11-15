@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   GRUPPI,
   calcolaScadenzario,
@@ -17,13 +18,96 @@ import {
   type Visita,
 } from "@/lib/sicurezza";
 
+export type UltimaBusta = { anno: number; mese: number; letta_il: string; avvisi: string | null };
+
 type Props = {
   persone: Persona[];
   corsi: Corso[];
   formazioni: Formazione[];
   visite: Visita[];
   oggi: string;
+  ultimaBusta: UltimaBusta | null;
 };
+
+const NOMI_MESI = [
+  "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
+  "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre",
+];
+
+type EsitoLettura = {
+  fileTrovati: number;
+  fileLetti: number;
+  risultati: { file: string; dipendenti: number; nuovi: string[]; aggiornati: string[]; avvisi: string[] }[];
+};
+
+// Passo 4: buste paga da Dropbox. Il cron le legge da solo ogni notte;
+// il pulsante serve per non aspettare (es. appena arriva la busta del mese).
+function BarraBustePaga({ ultima }: { ultima: UltimaBusta | null }) {
+  const router = useRouter();
+  const [inCorso, setInCorso] = useState(false);
+  const [esito, setEsito] = useState<EsitoLettura | null>(null);
+  const [errore, setErrore] = useState<string | null>(null);
+
+  async function leggiOra() {
+    setInCorso(true);
+    setErrore(null);
+    setEsito(null);
+    try {
+      const r = await fetch("/api/sicurezza/sincronizza-buste", { method: "POST" });
+      const dati = await r.json();
+      if (!r.ok) throw new Error(dati?.errore ?? `Errore ${r.status}`);
+      setEsito(dati);
+      router.refresh();
+    } catch (e) {
+      setErrore(e instanceof Error ? e.message : "Errore nella lettura");
+    } finally {
+      setInCorso(false);
+    }
+  }
+
+  return (
+    <div className="mb-4 rounded-lg border border-neutral-200 bg-white p-3 text-sm">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-neutral-600">
+          📄 Buste paga da Dropbox:{" "}
+          {ultima ? (
+            <>
+              ultima letta <b>{NOMI_MESI[ultima.mese - 1]} {ultima.anno}</b> (il{" "}
+              {new Date(ultima.letta_il).toLocaleDateString("it-IT")})
+            </>
+          ) : (
+            "nessuna ancora letta"
+          )}
+        </p>
+        <button
+          onClick={leggiOra}
+          disabled={inCorso}
+          className="shrink-0 rounded-md bg-neutral-100 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-200 disabled:opacity-60"
+        >
+          {inCorso ? "Lettura in corso…" : "🔄 Leggi buste paga ora"}
+        </button>
+      </div>
+      {ultima?.avvisi && <p className="mt-2 whitespace-pre-line text-xs text-amber-800">{ultima.avvisi}</p>}
+      {errore && <p className="mt-2 rounded bg-red-50 p-2 text-red-700">{errore}</p>}
+      {esito && (
+        <div className="mt-2 text-xs text-neutral-600">
+          {esito.fileLetti === 0 ? (
+            <p>Nessuna busta paga nuova ({esito.fileTrovati} già lette).</p>
+          ) : (
+            esito.risultati.map((r) => (
+              <p key={r.file}>
+                <b>{r.file}</b>: {r.dipendenti} dipendenti
+                {r.nuovi.length ? ` · nuovi: ${r.nuovi.join(", ")}` : ""}
+                {r.aggiornati.length ? ` · aggiornati: ${r.aggiornati.join("; ")}` : ""}
+                {r.avvisi.length ? ` · ⚠️ ${r.avvisi.join(" ")}` : ""}
+              </p>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const CLASSI: Record<ReturnType<typeof colore>, string> = {
   rosso: "bg-red-50 text-red-700 ring-red-200",
@@ -75,7 +159,7 @@ function Cella({ esiti }: { esiti: Esito[] }) {
   );
 }
 
-export function SicurezzaClient({ persone, corsi, formazioni, visite, oggi }: Props) {
+export function SicurezzaClient({ persone, corsi, formazioni, visite, oggi, ultimaBusta }: Props) {
   const [ricerca, setRicerca] = useState("");
   const [filtroGruppo, setFiltroGruppo] = useState<GruppoId | null>(null);
   const [soloProblemi, setSoloProblemi] = useState(false);
@@ -108,6 +192,8 @@ export function SicurezzaClient({ persone, corsi, formazioni, visite, oggi }: Pr
 
   return (
     <div>
+      <BarraBustePaga ultima={ultimaBusta} />
+
       {/* Contatori per adempimento: cliccando si filtra la tabella */}
       <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {contatori.map((c) => {
