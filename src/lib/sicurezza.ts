@@ -18,6 +18,7 @@ export type Persona = {
   addetto_antincendio: boolean;
   addetto_primo_soccorso: boolean;
   rls: boolean;
+  contratto_dropbox?: string | null;
   note: string | null;
 };
 

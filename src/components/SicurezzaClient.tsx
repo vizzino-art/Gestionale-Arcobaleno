@@ -17,6 +17,7 @@ import {
   type Stato,
   type Visita,
 } from "@/lib/sicurezza";
+import { FinestraModifica, type Modale } from "@/components/SicurezzaModifica";
 
 export type UltimaBusta = { anno: number; mese: number; letta_il: string; avvisi: string | null };
 
@@ -165,6 +166,7 @@ export function SicurezzaClient({ persone, corsi, formazioni, visite, oggi, ulti
   const [soloProblemi, setSoloProblemi] = useState(false);
   const [mostraCessati, setMostraCessati] = useState(false);
   const [aperta, setAperta] = useState<string | null>(null);
+  const [modale, setModale] = useState<Modale | null>(null);
 
   const attive = useMemo(() => persone.filter((p) => !p.data_cessazione), [persone]);
   const cessate = useMemo(() => persone.filter((p) => p.data_cessazione), [persone]);
@@ -193,6 +195,23 @@ export function SicurezzaClient({ persone, corsi, formazioni, visite, oggi, ulti
   return (
     <div>
       <BarraBustePaga ultima={ultimaBusta} />
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        <button
+          onClick={() => setModale({ tipo: "persona" })}
+          className="rounded-md bg-neutral-900 px-3 py-2 text-sm text-white hover:bg-neutral-700"
+        >
+          ➕ Nuovo assunto
+        </button>
+        <button
+          onClick={() => setModale({ tipo: "formazione", persone: ordinaPerNome(attive) })}
+          className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+        >
+          🎓 Registra corso di gruppo
+        </button>
+      </div>
+
+      {modale && <FinestraModifica modale={modale} corsi={corsi} onChiudi={() => setModale(null)} />}
 
       {/* Contatori per adempimento: cliccando si filtra la tabella */}
       <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -288,6 +307,7 @@ export function SicurezzaClient({ persone, corsi, formazioni, visite, oggi, ulti
                           formazioni={formazioni.filter((f) => f.persona_id === p.id)}
                           visite={visite.filter((v) => v.persona_id === p.id)}
                           nomeCorso={nomeCorso}
+                          onModifica={setModale}
                         />
                       </td>
                     </tr>
@@ -334,6 +354,7 @@ export function SicurezzaClient({ persone, corsi, formazioni, visite, oggi, ulti
                       formazioni={formazioni.filter((f) => f.persona_id === p.id)}
                       visite={visite.filter((v) => v.persona_id === p.id)}
                       nomeCorso={nomeCorso}
+                      onModifica={setModale}
                     />
                   </div>
                 )}
@@ -346,20 +367,47 @@ export function SicurezzaClient({ persone, corsi, formazioni, visite, oggi, ulti
   );
 }
 
+function ordinaPerNome(persone: Persona[]): Persona[] {
+  return [...persone].sort(
+    (a, b) => a.cognome.localeCompare(b.cognome, "it") || a.nome.localeCompare(b.nome, "it")
+  );
+}
+
+const MATITA = "ml-1 rounded px-1 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-800";
+const AGGIUNGI =
+  "rounded-md border border-neutral-300 bg-white px-2.5 py-1 text-xs text-neutral-700 hover:bg-neutral-100";
+
 function SchedaPersona({
   persona,
   formazioni,
   visite,
   nomeCorso,
+  onModifica,
 }: {
   persona: Persona;
   formazioni: Formazione[];
   visite: Visita[];
   nomeCorso: (id: string) => string;
+  onModifica: (m: Modale) => void;
 }) {
   const corsiOrdinati = [...formazioni].sort((a, b) => ((b.data_corso ?? "") > (a.data_corso ?? "") ? 1 : -1));
   const visiteOrdinate = [...visite].sort((a, b) => (b.data_visita > a.data_visita ? 1 : -1));
   return (
+    <div>
+    <div className="mb-3 flex flex-wrap gap-2">
+      <button
+        className={AGGIUNGI}
+        onClick={() => onModifica({ tipo: "formazione", persone: [persona], fissa: persona })}
+      >
+        🎓 Registra corso
+      </button>
+      <button className={AGGIUNGI} onClick={() => onModifica({ tipo: "visita", persona })}>
+        🩺 Registra visita
+      </button>
+      <button className={AGGIUNGI} onClick={() => onModifica({ tipo: "persona", persona })}>
+        ✏️ Dati e incarichi
+      </button>
+    </div>
     <div className="grid gap-4 text-sm sm:grid-cols-2">
       <div>
         <p className="mb-1 text-xs font-medium uppercase tracking-wide text-neutral-500">Corsi</p>
@@ -385,6 +433,13 @@ function SchedaPersona({
                   📄 attestato
                 </a>
               )}
+              <button
+                title="Modifica"
+                className={MATITA}
+                onClick={() => onModifica({ tipo: "formazione", persone: [persona], fissa: persona, formazione: f })}
+              >
+                ✏️
+              </button>
               {f.note && <p className="text-xs text-neutral-500">{f.note}</p>}
             </li>
           ))}
@@ -403,6 +458,13 @@ function SchedaPersona({
                 {v.prossima_scadenza ? ` → prossima ${formattaData(v.prossima_scadenza)}` : ""}
                 {v.giudizio ? ` · ${v.giudizio.replaceAll("_", " ")}` : ""}
               </span>
+              <button
+                title="Modifica"
+                className={MATITA}
+                onClick={() => onModifica({ tipo: "visita", persona, visita: v })}
+              >
+                ✏️
+              </button>
             </li>
           ))}
         </ul>
@@ -413,6 +475,7 @@ function SchedaPersona({
           </p>
         )}
       </div>
+    </div>
     </div>
   );
 }
