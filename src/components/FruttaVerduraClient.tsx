@@ -153,7 +153,10 @@ export function FruttaVerduraClient({ bozzaIniziale, aggiornatoIlIniziale }: Pro
         .maybeSingle();
       if (data && data.aggiornato_il !== ultimoAggiornamentoRef.current) {
         ultimoAggiornamentoRef.current = data.aggiornato_il;
-        setBozza((data.dati as BozzaFruttaVerdura) ?? BOZZA_VUOTA);
+        // Stesso merge con BOZZA_VUOTA della pagina server: "dati" può
+        // mancare di qty/unit/extra/note se la riga è stata creata senza
+        // quella forma completa (vedi commento in page.tsx).
+        setBozza({ ...BOZZA_VUOTA, ...(data.dati as Partial<BozzaFruttaVerdura> | null) });
       }
     }
     const intervallo = setInterval(ricarica, INTERVALLO_RICARICA_MS);

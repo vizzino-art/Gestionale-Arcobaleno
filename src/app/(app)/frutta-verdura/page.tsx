@@ -11,7 +11,14 @@ export default async function FruttaVerduraPage() {
     .eq("id", 1)
     .maybeSingle();
 
-  const bozzaIniziale: BozzaFruttaVerdura = (data?.dati as BozzaFruttaVerdura) ?? BOZZA_VUOTA;
+  // Merge con BOZZA_VUOTA (non solo "?? BOZZA_VUOTA"): la riga esiste già
+  // con "dati" a "{}" letterale (così l'ha creata la migrazione), quindi
+  // senza merge bozza.qty/unit/extra/note risulterebbero undefined e la
+  // pagina andrebbe in crash al primo accesso a bozza.qty["Asparagi"].
+  const bozzaIniziale: BozzaFruttaVerdura = {
+    ...BOZZA_VUOTA,
+    ...(data?.dati as Partial<BozzaFruttaVerdura> | undefined),
+  };
   const aggiornatoIlIniziale: string = data?.aggiornato_il ?? new Date(0).toISOString();
 
   return (
