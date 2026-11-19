@@ -109,6 +109,7 @@ export type Esito = {
   etichetta: string; // nome breve
   stato: Stato;
   data: string | null; // scadenza, o termine entro cui farlo
+  fatto: string | null; // data dell'ultimo corso/visita valido (per mostrare "fatta il …")
   gruppo: GruppoId;
 };
 
@@ -179,7 +180,7 @@ function esitoCorso(c: Corso, p: Persona, corsi: Corso[], formazioni: Formazione
   const completate = mie
     .filter((f) => f.stato === "completato" && f.data_corso)
     .sort((a, b) => (b.data_corso! > a.data_corso! ? 1 : -1));
-  const base = { chiave: c.id, etichetta: ABBREVIAZIONI[c.id] ?? c.nome, gruppo: gruppoDelCorso(c) };
+  const base = { chiave: c.id, etichetta: ABBREVIAZIONI[c.id] ?? c.nome, gruppo: gruppoDelCorso(c), fatto: null };
 
   const ultima = completate[0];
   if (ultima) {
@@ -187,7 +188,7 @@ function esitoCorso(c: Corso, p: Persona, corsi: Corso[], formazioni: Formazione
     const scadenza =
       ultima.scadenza ??
       (corsoUltima.validita_mesi ? aggiungiMesi(ultima.data_corso!, corsoUltima.validita_mesi) : null);
-    return { ...base, stato: statoDaScadenza(scadenza, oggi), data: scadenza };
+    return { ...base, stato: statoDaScadenza(scadenza, oggi), data: scadenza, fatto: ultima.data_corso };
   }
 
   if (mie.some((f) => f.stato === "in_corso")) return { ...base, stato: "in_corso", data: null };
@@ -205,9 +206,14 @@ function esitoVisita(p: Persona, visite: Visita[], oggi: string): Esito {
   const ultima = visite
     .filter((v) => v.persona_id === p.id)
     .sort((a, b) => (b.data_visita > a.data_visita ? 1 : -1))[0];
-  const base = { chiave: "visita", etichetta: "Visita", gruppo: "visita" as GruppoId };
+  const base = { chiave: "visita", etichetta: "Visita", gruppo: "visita" as GruppoId, fatto: null };
   if (!ultima) return { ...base, stato: "mancante", data: null };
-  return { ...base, stato: statoDaScadenza(ultima.prossima_scadenza, oggi), data: ultima.prossima_scadenza };
+  return {
+    ...base,
+    stato: statoDaScadenza(ultima.prossima_scadenza, oggi),
+    data: ultima.prossima_scadenza,
+    fatto: ultima.data_visita,
+  };
 }
 
 export function calcolaScadenzario(

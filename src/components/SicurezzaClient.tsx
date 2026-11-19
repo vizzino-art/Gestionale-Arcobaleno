@@ -159,7 +159,7 @@ function testoStato(e: Esito): string {
     in_scadenza: `scade ${d}`,
     da_fare: `entro ${d}`,
     in_corso: "in corso",
-    ok: e.data ? d : "valido",
+    ok: e.data ? `valida fino al ${d}` : e.fatto ? `fatta il ${formattaData(e.fatto)}` : "valido",
   };
   return testi[e.stato];
 }
@@ -175,10 +175,22 @@ function Pillola({ e, conNome }: { e: Esito; conNome: boolean }) {
   );
 }
 
-// Una cella: se il gruppo ha più adempimenti mostra solo quelli non verdi
-// (col nome breve), altrimenti un'unica pillola riassuntiva.
-function Cella({ esiti }: { esiti: Esito[] }) {
+// Una cella. Formazione sicurezza e HACCP (tutte=true, richiesta di Mauro
+// del 19/11): sempre tutte le voci, ognuna col suo colore, così si vede
+// anche cosa è a posto (es. "Generale: fatta il …" accanto a "Specifica:
+// scaduta"). Visita e incarichi: solo le voci non verdi, oppure un'unica
+// pillola con la scadenza più vicina se è tutto valido.
+function Cella({ esiti, tutte }: { esiti: Esito[]; tutte: boolean }) {
   if (esiti.length === 0) return <span className="text-xs text-neutral-400">—</span>;
+  if (tutte) {
+    return (
+      <div className="flex flex-wrap gap-1">
+        {esiti.map((e) => (
+          <Pillola key={e.chiave} e={e} conNome={esiti.length > 1} />
+        ))}
+      </div>
+    );
+  }
   const problemi = esiti.filter((e) => e.stato !== "ok");
   if (problemi.length === 0) {
     // Tutto valido: mostra la scadenza più vicina.
@@ -330,7 +342,10 @@ export function SicurezzaClient({ persone, corsi, formazioni, visite, oggi, ulti
                     </td>
                     {GRUPPI.map((g) => (
                       <td key={g.id} className="px-3 py-2">
-                        <Cella esiti={r.esiti.filter((e) => e.gruppo === g.id)} />
+                        <Cella
+                          esiti={r.esiti.filter((e) => e.gruppo === g.id)}
+                          tutte={g.id === "sicurezza" || g.id === "haccp"}
+                        />
                       </td>
                     ))}
                   </tr>
